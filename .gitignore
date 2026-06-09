@@ -1,0 +1,25 @@
+﻿# dependencies (re-installed by the host, never commit)
+node_modules/
+**/node_modules/
+
+# secrets - NEVER commit these
+.env
+**/.env
+*.env
+!**/.env.example
+
+# build output
+dist/
+build/
+**/dist/
+
+# logs / local data
+*.log
+npm-debug.log*
+backend/data.json
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

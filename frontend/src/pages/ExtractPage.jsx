@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react'
 import { Card, Select, Checkbox, Button, Table, Space, Typography, InputNumber, message, Switch, Modal, Input, Dropdown } from 'antd'
-import { DownloadOutlined, EyeOutlined, CopyOutlined, SearchOutlined, DownOutlined } from '@ant-design/icons'
+import { DownloadOutlined, EyeOutlined, CopyOutlined, SearchOutlined, DownOutlined, SaveOutlined } from '@ant-design/icons'
 import * as XLSX from 'xlsx'
 import { useApp } from '../context/AppProvider'
 import { extractEmails, fetchIsps } from '../services/accounts'
@@ -40,28 +40,28 @@ function authLabel(v) {
 }
 
 export default function ExtractPage() {
-  const { accounts } = useApp()
-  const [accountId, setAccountId] = useState(null)
+  const { accounts, extractResults, setExtractResults, extractMeta, setExtractMeta, saveEmails, notify } = useApp()
+  const [accountId, setAccountId] = useState(extractMeta.accountId || null)
   const [count, setCount] = useState(50)
   const [fields, setFields] = useState(['category', 'from_name', 'subject', 'spf', 'dkim', 'dmarc'])
-  const [withSource, setWithSource] = useState(false)
+  const [withSource, setWithSource] = useState(extractMeta.withSource || false)
   const [placements, setPlacements] = useState([])  // filter by category (multi)
   const [colFilters, setColFilters] = useState({}) // per-column text filters
   const [keyword, setKeyword] = useState('')        // global keyword search
   const [isps, setIsps] = useState([])              // ISP defs (for per-ISP placements)
-  const [rows, setRows] = useState([])
+  const rows = extractResults                       // results live in app state (persist across navigation)
+  const setRows = setExtractResults
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState(null) // full source modal
+  const [selectedKeys, setSelectedKeys] = useState([]) // selected table rows
 
   useEffect(() => { fetchIsps().then(setIsps).catch(() => setIsps([])) }, [])
 
   // The placement options for the chosen account come from ITS ISP definition.
-  // (Gmail -> primary/promotions/social/updates/forums/spam; GMX -> inbox/spam; etc.)
   const selectedAccount = accounts.find(a => a.id === accountId)
   const ispForAccount = selectedAccount && isps.find(i =>
     i.id === selectedAccount.isp_id || i.name?.toLowerCase() === (selectedAccount.email || '').split('@')[1]?.split('.')[0])
   const placementOptions = (ispForAccount?.placements || []).map(p => ({ value: p.key, label: p.label }))
-  // when the account changes, clear placement filter (different ISP = different placements)
   useEffect(() => { setPlacements([]) }, [accountId])
   const [dragCol, setDragCol] = useState(null) // column key being dragged
 
@@ -71,9 +71,24 @@ export default function ExtractPage() {
     try {
       const data = await extractEmails(accountId, count, withSource, placements)
       setRows(data.emails || [])
+      setExtractMeta({ accountId, withSource })
+      setSelectedKeys([])
       if (!data.emails?.length) message.info('No emails found')
     } catch (e) { message.error(e.response?.data?.message || 'Extract failed') }
     finally { setBusy(false) }
+  }
+
+  // Save the selected rows (with full source) into Storage.
+  const rowKeyOf = (r, i) => r.message_id || `${r.from_email}|${r.subject}|${i}`
+  const saveSelected = () => {
+    const chosen = rows.filter((r, i) => selectedKeys.includes(rowKeyOf(r, i)))
+    if (!chosen.length) return message.warning('Select at least one email')
+    if (!withSource && chosen.some(r => !r.source)) {
+      message.warning('Tip: enable "Include full source" and re-extract to save the raw source too')
+    }
+    saveEmails(chosen)
+    notify?.(`Saved ${chosen.length} email(s) to Storage`)
+    setSelectedKeys([])
   }
 
   const AUTH = ['spf', 'dkim', 'dmarc']
@@ -257,7 +272,11 @@ export default function ExtractPage() {
         <Card
           title={`${filteredRows.length} emails`}
           extra={
-            <Space>
+            <Space wrap>
+              <Button icon={<SaveOutlined />} type="primary" ghost
+                disabled={!selectedKeys.length} onClick={saveSelected}>
+                Save selected ({selectedKeys.length})
+              </Button>
               <Select size="small" value={sepChoice} onChange={setSepChoice} style={{ width: 120 }}
                 options={SEPARATORS} title="Separator for copy" />
               <Dropdown menu={copyMenu} trigger={['click']}>
@@ -269,7 +288,8 @@ export default function ExtractPage() {
           <Input allowClear prefix={<SearchOutlined />} placeholder="Search keyword across all columns..."
             value={keyword} onChange={(e) => setKeyword(e.target.value)}
             style={{ marginBottom: 12, maxWidth: 360 }} />
-          <Table rowKey={(_, i) => i} dataSource={filteredRows} columns={columns}
+          <Table rowKey={(r, i) => rowKeyOf(r, i)} dataSource={filteredRows} columns={columns}
+            rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
             scroll={{ x: true }} size="small" pagination={{ pageSize: 25 }} />
         </Card>
       )}

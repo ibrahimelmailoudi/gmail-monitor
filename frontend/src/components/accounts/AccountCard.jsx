@@ -20,16 +20,19 @@ export default function AccountCard({ account, onToggle, onRemove, onRefresh, ne
   const [shareText, setShareText] = useState('')
   const [priority, setPriorityState] = useState(!!account.priority)
 
-  const isOwner = account.owner_id === user?.id
-  // Global accounts: owner who shared it AND staff can pause/delete. Others cannot.
-  const canToggle = account.scope === 'global' ? (isOwner || isStaff) : (isOwner || isStaff)
-  const canDelete = account.scope === 'global' ? (isOwner || isStaff) : (isOwner || isStaff)
-  // Refresh: owner/staff, or a user granted the refresh_accounts permission
-  const canRefresh = isOwner || isStaff || !!user?.permissions?.refresh_accounts
-  // Share: owner or staff can share their account
-  const canShare = isOwner || isStaff
-  // Priority: owner or staff can mark this account to be checked first
-  const canPriority = isOwner || isStaff
+  const isOwner = (account.owner_id || account.ownerId) === user?.id
+  const isGlobal = account.scope === 'global'
+  // Rule: normal users get NO crud on GLOBAL accounts (only staff do).
+  // On personal accounts, the owner and staff have full crud.
+  const canToggle = isGlobal ? isStaff : (isOwner || isStaff)
+  const canDelete = isGlobal ? isStaff : (isOwner || isStaff)
+  // Refresh: staff always; on personal accounts the owner; or a user explicitly
+  // granted the refresh_accounts permission (but still not on global unless staff).
+  const canRefresh = isStaff || (!isGlobal && isOwner) || (!isGlobal && !!user?.permissions?.refresh_accounts)
+  // Share: only the owner of a personal account, or staff.
+  const canShare = isGlobal ? isStaff : (isOwner || isStaff)
+  // Priority: owner of a personal account, or staff.
+  const canPriority = isGlobal ? isStaff : (isOwner || isStaff)
 
   const togglePriority = async () => {
     const next = !priority
@@ -122,7 +125,9 @@ export default function AccountCard({ account, onToggle, onRemove, onRefresh, ne
                   onClick={() => onToggle(account.id)} />
               </Tooltip>
             ) : (
-              ""
+              <Tooltip title="Global account - only staff can pause it">
+                <Button size="small" disabled icon={live ? <PauseCircleOutlined /> : <PlayCircleOutlined />} />
+              </Tooltip>
             )}
             {canRefresh && (
               <Tooltip title="Check for new emails now">
@@ -134,7 +139,9 @@ export default function AccountCard({ account, onToggle, onRemove, onRefresh, ne
                 <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
               </Popconfirm>
             ) : (
-              ""
+              <Tooltip title="Global account  -  only the owner or staff can remove it">
+                <Button size="small" disabled icon={<LockOutlined />}>Delete</Button>
+              </Tooltip>
             )}
             {canShare && (
               <Tooltip title="Share this account with another user">

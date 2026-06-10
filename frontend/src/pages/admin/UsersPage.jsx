@@ -35,7 +35,29 @@ export default function UsersPage() {
     try { await createUser(vals); message.success('User created'); setOpen(false); form.resetFields(); load() }
     catch (e) { message.error(e.response?.data?.message || 'Failed') }
   }
-  const remove = async (id) => { await deleteUser(id); message.success('User deleted'); load() }
+  const remove = async (u) => {
+    // Deleting an admin needs the top-admin secret code.
+    if (u.role === 'admin') {
+      let code = ''
+      Modal.confirm({
+        title: `Delete admin "${u.username}"`,
+        content: (
+          <div>
+            <p>Deleting an admin requires the top-admin secret code.</p>
+            <Input.Password placeholder="Top-admin secret code" onChange={(e) => { code = e.target.value }} />
+          </div>
+        ),
+        okText: 'Delete admin', okButtonProps: { danger: true },
+        onOk: async () => {
+          try { await deleteUser(u.id, code); message.success('Admin deleted'); load() }
+          catch (e) { message.error(e.response?.data?.message || 'Delete failed'); throw e }
+        },
+      })
+      return
+    }
+    try { await deleteUser(u.id); message.success('User deleted'); load() }
+    catch (e) { message.error(e.response?.data?.message || 'Delete failed') }
+  }
   const setMax = async (id, max_accounts) => { await updateUser(id, { max_accounts }); load() }
   const setTokenHours = async (id, token_hours) => { await updateUser(id, { token_hours: token_hours || null }); load() }
 
@@ -65,9 +87,14 @@ export default function UsersPage() {
       <Space>
         <Button size="small" icon={<SafetyOutlined />} onClick={() => openRole(r)} disabled={r.id === me?.id}>Role</Button>
         <Button size="small" icon={<AppstoreOutlined />} onClick={() => openSec(r)}>Access</Button>
-        <Popconfirm title="Delete this user?" onConfirm={() => remove(r.id)} disabled={r.id === me?.id}>
-          <Button size="small" danger icon={<DeleteOutlined />} disabled={r.id === me?.id} />
-        </Popconfirm>
+        {r.role === 'admin' ? (
+          <Button size="small" danger icon={<DeleteOutlined />} disabled={r.id === me?.id}
+            onClick={() => remove(r)} />
+        ) : (
+          <Popconfirm title="Delete this user?" onConfirm={() => remove(r)} disabled={r.id === me?.id}>
+            <Button size="small" danger icon={<DeleteOutlined />} disabled={r.id === me?.id} />
+          </Popconfirm>
+        )}
       </Space>) },
   ]
 

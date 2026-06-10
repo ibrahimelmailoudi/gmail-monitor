@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import { Card, Table, Tag, Button, Typography, Space, Modal, AutoComplete, message, Empty } from 'antd'
-import { ShareAltOutlined, MailOutlined } from '@ant-design/icons'
+import { Card, Table, Tag, Button, Typography, Space, Modal, AutoComplete, message, Empty, Popconfirm } from 'antd'
+import { ShareAltOutlined, MailOutlined, DeleteOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons'
 import { useApp } from '../context/AppProvider'
 import { searchUsers, shareAccount } from '../services/accounts'
 
@@ -9,7 +9,7 @@ const { Title, Text } = Typography
 // A simple page where a normal user sees THEIR OWN accounts and can share them
 // with another user by name or 4-digit ID. (No global-scope toggle here.)
 export default function MyAccountsPage() {
-  const { accounts, user } = useApp()
+  const { accounts, user, toggle, remove } = useApp()
   const mine = accounts.filter(a => a.ownerId === user?.id || a.owner_id === user?.id)
 
   const [shareFor, setShareFor] = useState(null) // account being shared
@@ -39,8 +39,16 @@ export default function MyAccountsPage() {
     { title: 'Status', dataIndex: 'active', render: (v) => <Tag color={v ? 'green' : 'default'}>{v ? 'Live' : 'Paused'}</Tag> },
     { title: 'Scope', dataIndex: 'scope', render: (v) => <Tag color={v === 'global' ? 'purple' : 'blue'}>{v || 'personal'}</Tag> },
     { title: 'Emails', key: 'n', render: (_, r) => (r.emails || []).length },
-    { title: 'Share', key: 'share', render: (_, r) =>
-      <Button size="small" icon={<ShareAltOutlined />} onClick={() => setShareFor(r)}>Share</Button> },
+    { title: 'Actions', key: 'actions', render: (_, r) =>
+      <Space>
+        <Button size="small" icon={r.active ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+          onClick={() => toggle(r.id)}>{r.active ? 'Pause' : 'Start'}</Button>
+        <Button size="small" icon={<ShareAltOutlined />} onClick={() => setShareFor(r)}>Share</Button>
+        <Popconfirm title="Delete this account?" okText="Delete" okButtonProps={{ danger: true }}
+          onConfirm={() => remove(r.id)}>
+          <Button size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      </Space> },
   ]
 
   return (

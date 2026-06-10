@@ -85,7 +85,22 @@ export default function AccountsPage() {
   const grandTotal = useMemo(() =>
     accounts.reduce((sum, a) => sum + (a.emails || []).length, 0), [accounts])
 
-  const emailFilter = placement === 'all' ? null : (e) => e.category === placement
+  // Filter the emails shown INSIDE each card: by placement AND by the keyword.
+  // So typing a keyword shows only the matching emails (sender/subject/domain/ip),
+  // not just the matching accounts.
+  const emailFilter = (e) => {
+    if (placement !== 'all' && e.category !== placement) return false
+    if (q) {
+      const hit =
+        (e.sender?.name || '').toLowerCase().includes(q) ||
+        (e.sender?.subject || '').toLowerCase().includes(q) ||
+        (e.sender?.email || '').toLowerCase().includes(q) ||
+        (e.sender?.domain || '').toLowerCase().includes(q) ||
+        (e.ip || '').toLowerCase().includes(q)
+      if (!hit) return false
+    }
+    return true
+  }
 
   // The combined box lists the MONITORED ACCOUNT ADDRESSES (the mailboxes the user
   // registered), not the content of incoming mail. Respects the ISP filter and the

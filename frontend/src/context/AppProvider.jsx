@@ -13,6 +13,23 @@ export function AppProvider({ children }) {
   const [mode, setMode] = useState(localStorage.getItem('mode') || 'light')
   const [messageApi, contextHolder] = message.useMessage()
 
+  // Extract page results - kept here (not in the page) so navigating away and back
+  // does NOT wipe the extracted emails. Lives in memory for the session.
+  const [extractResults, setExtractResults] = useState([])
+  const [extractMeta, setExtractMeta] = useState({ accountId: null, withSource: false })
+  // Emails the user chose to save (full source). In-memory for the session.
+  const [storedEmails, setStoredEmails] = useState([])
+  const saveEmails = useCallback((emails) => {
+    setStoredEmails(prev => {
+      const seen = new Set(prev.map(e => e.message_id || `${e.from_email}|${e.subject}`))
+      const add = emails.filter(e => !seen.has(e.message_id || `${e.from_email}|${e.subject}`))
+      return [...add, ...prev]
+    })
+  }, [])
+  const removeStored = useCallback((id) =>
+    setStoredEmails(prev => prev.filter(e => (e.message_id || `${e.from_email}|${e.subject}`) !== id)), [])
+  const clearStored = useCallback(() => setStoredEmails([]), [])
+
   const notify = useCallback((msg, type = 'success') =>
     messageApi.open({ type: type === 'error' ? 'error' : 'success', content: msg }), [messageApi])
 
@@ -57,7 +74,10 @@ export function AppProvider({ children }) {
 
   return (
     <ConfigProvider theme={makeTheme(mode)}>
-      <AppContext.Provider value={{ token, setToken, user, mode, toggleMode, notify, ...accountState }}>
+      <AppContext.Provider value={{ token, setToken, user, mode, toggleMode, notify,
+        extractResults, setExtractResults, extractMeta, setExtractMeta,
+        storedEmails, saveEmails, removeStored, clearStored,
+        ...accountState }}>
         {contextHolder}
         {children}
       </AppContext.Provider>

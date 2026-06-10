@@ -7,14 +7,24 @@ import {
   listUsers, createUser, updateUser, listIsps, addIsp, stats,
   grantAccess, revokeAccess, listAllAccountsAdmin, setAccountScope,
   listResetRequests, resolveResetRequest, listNotifications, countUnread, markAllRead,
-  getUserByUsername, deleteUser, setUserSections, listRequestTypes, addRequestType,
+  getUserByUsername, getUserById, deleteUser, setUserSections, listRequestTypes, addRequestType,
   getSetting, setSetting, trimNotifications, updateIsp, deleteIsp,
   listStoredEmails, deleteEmail, deleteEmailsBulk, listAccessUserIds,
 } from '../store.js'
 import { emitToUser } from '../monitor.js'
+import { config } from '../config.js'
 
 const router = Router()
 router.use(auth, staffOnly)
+
+// The "top admin" is whoever knows the secret code. The code is stored in settings
+// (rotatable at runtime); if unset there, it falls back to the env BOOTSTRAP_SECRET.
+async function verifyTopAdminCode(code) {
+  if (!code) return false
+  const stored = await getSetting('top_admin_code', null)
+  const expected = stored || config.bootstrapSecret || ''
+  return expected.length > 0 && String(code) === String(expected)
+}
 
 // ----- users -----
 router.get('/users', async (_req, res) => res.json(await listUsers()))
@@ -49,9 +59,29 @@ router.patch('/users/:id/role', requirePerm('manage_users'), async (req, res) =>
 })
 
 // ----- delete user / sections / token hours -----
+// Deleting a regular user: any manage_users admin can do it freely.
+// Deleting an ADMIN: requires the top-admin secret code (proves top-admin authority).
 router.delete('/users/:id', requirePerm('manage_users'), async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ message: 'Cannot delete yourself' })
+  const target = await getUserById(req.params.id)
+  if (!target) return res.status(404).json({ message: 'Not found' })
+  if (target.role === 'admin') {
+    const code = req.body?.topAdminCode || req.headers['x-top-admin-code'] || ''
+    const ok = await verifyTopAdminCode(code)
+    if (!ok) return res.status(403).json({ message: 'Deleting an admin requires the top-admin secret code' })
+  }
   await deleteUser(req.params.id); res.json({ ok: true })
+})
+
+// Rotate the top-admin secret code. Requires the CURRENT code (so only the current
+// top admin can hand off the role by setting a new code).
+router.post('/top-admin/rotate', requirePerm('manage_users'), async (req, res) => {
+  const { currentCode, newCode } = req.body || {}
+  if (!newCode || newCode.length < 6) return res.status(400).json({ message: 'New code must be at least 6 characters' })
+  const ok = await verifyTopAdminCode(currentCode || '')
+  if (!ok) return res.status(403).json({ message: 'Current top-admin code is incorrect' })
+  await setSetting('top_admin_code', String(newCode))
+  res.json({ ok: true })
 })
 router.patch('/users/:id/sections', requirePerm('manage_users'), async (req, res) => {
   const { sections = [] } = req.body || {}

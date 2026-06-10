@@ -28,7 +28,10 @@ export const getPresence = () => client.get('/api/presence').then(r => r.data)
 
 export const updateIsp = (id, patch) => client.patch(`/api/admin/isps/${id}`, patch)
 export const deleteIsp = (id) => client.delete(`/api/admin/isps/${id}`)
-export const deleteUser = (id) => client.delete(`/api/admin/users/${id}`)
+export const deleteUser = (id, topAdminCode) =>
+  client.delete(`/api/admin/users/${id}`, topAdminCode ? { data: { topAdminCode } } : undefined)
+export const rotateTopAdmin = (currentCode, newCode) =>
+  client.post('/api/admin/top-admin/rotate', { currentCode, newCode })
 export const setUserSections = (id, sections) => client.patch(`/api/admin/users/${id}/sections`, { sections })
 export const getSettings = () => client.get('/api/admin/settings').then(r => r.data)
 export const saveSettings = (patch) => client.put('/api/admin/settings', patch)

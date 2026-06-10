@@ -1,4 +1,9 @@
-﻿import express from 'express'
+# fill-stage37.ps1 - add request logging so failures (like 400s) show in the terminal
+# Run from E:\gmail-monitor
+$ErrorActionPreference = "Stop"
+
+Set-Content -LiteralPath 'backend\server.js' -Encoding utf8 -Value @'
+import express from 'express'
 import http from 'http'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
@@ -109,3 +114,9 @@ purgeOldEmails().catch(() => {})
 setInterval(() => { purgeOldEmails().catch(() => {}); purgeResolvedRequests().catch(() => {}) }, 60 * 60 * 1000)
 
 server.listen(config.port, () => console.log(`Backend running on http://localhost:${config.port}`))
+'@
+Write-Host 'wrote backend\server.js'
+
+Write-Host ""
+Write-Host "STAGE 37 written. Restart the backend (Ctrl+C then npm start)."
+Write-Host "Now every request prints in the terminal, with the error message for any 4xx/5xx."

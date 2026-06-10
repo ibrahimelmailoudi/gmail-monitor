@@ -1,13 +1,14 @@
 ﻿html, body, #root { margin: 0; height: 100%; }
 body { background: #f1f5f9; }
 
-/* new-email entrance animation - slower so you can see it push in */
+/* new-email entrance animation - slow + larger travel so it's clearly visible
+   sliding in from the left, one after another (staggered by index in EmailCard). */
 @keyframes emailIn {
-  from { opacity: 0; transform: translateX(-24px) scale(0.95); }
-  60%  { opacity: 1; }
-  to   { opacity: 1; transform: none; }
+  0%   { opacity: 0; transform: translateX(-60px) scale(0.9); }
+  50%  { opacity: 1; }
+  100% { opacity: 1; transform: none; }
 }
-.email-in { animation: emailIn 1.6s cubic-bezier(.16,.84,.34,1) both; }
+.email-in { animation: emailIn 2.2s cubic-bezier(.16,.84,.34,1) both; }
 
 /* pulsing border to mark a brand-new email (expires when 'new' state clears) */
 @keyframes newPulse {

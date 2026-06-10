@@ -14,7 +14,7 @@ export default function StoragePage() {
   const [view, setView] = useState(null)
   const [selected, setSelected] = useState([])
 
-  const keyOf = (e, i) => e.message_id || `${e.from_email}|${e.subject}|${i}`
+  const keyOf = (e, i) => e.id || e.message_id || `${e.from_email}|${e.subject}|${i}`
 
   const downloadOne = (e) => {
     const content = e.source || buildFallback(e)
@@ -51,7 +51,7 @@ export default function StoragePage() {
         <Button size="small" icon={<EyeOutlined />} onClick={() => setView(r)} />
         <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadOne(r)} />
         <Button size="small" danger icon={<DeleteOutlined />}
-          onClick={() => removeStored(r.message_id || `${r.from_email}|${r.subject}`)} />
+          onClick={() => removeStored(r.id)} />
       </Space> },
   ]
 

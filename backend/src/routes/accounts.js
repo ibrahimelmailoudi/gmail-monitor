@@ -2,6 +2,7 @@
 import { auth } from '../auth-middleware.js'
 import {
   listAccountsForUser, getAccountRow, addAccount, removeAccount, findAccountByEmail,
+  saveEmailsForUser, listSavedEmails, deleteSavedEmail, clearSavedEmails,
   countAccountsForOwner, getIsp,
 } from '../store.js'
 import { startAccount, stopAccount, toggleAccount, emitAdded, emitRemoved, startForUser, startAllForUser, stopAllForUser } from '../monitor.js'
@@ -67,31 +68,16 @@ router.post('/:id/toggle', async (req, res) => {
 })
 
 // Manual refresh: pull newest emails right now (so user can check without waiting)
-// router.post('/:id/refresh', async (req, res) => {
-//   const account = await getOwnedOrGrantedAccount(req.params.id, req.user)
-//   if (!account) return res.status(404).json({ message: 'Not found' })
-//   // gated by permission unless owner/staff
-//   const staff = req.user.role === 'admin' || req.user.role === 'support'
-//   //fixed - anyone who can SEE the account (owner, staff, or granted user with permission) can refresh
-//   const isOwner = account.owner_id === req.user.id
-//   const isGranted = !isOwner && !staff // they got here via grantAccess
-//   if (!staff && !isOwner && !(isGranted && req.user.permissions?.refresh_accounts))
-//     return res.status(403).json({ message: 'Missing permission: refresh_accounts' })
-//   try {
-//     // Live refresh should only bring in RECENT mail (last 5 minutes), not old emails.
-//     const fiveMinAgo = Date.now() - 5 * 60 * 1000
-//     const emails = await extractFromAccount(account, 40, false, [], fiveMinAgo)
-//     res.json({ account: { id: account.id, email: account.email }, emails })
-//   } catch (e) {
-//     res.status(400).json({ message: 'Refresh failed: ' + e.message })
-//   }
-// })
-// Replace the entire refresh route with this:
 router.post('/:id/refresh', async (req, res) => {
   const account = await getOwnedOrGrantedAccount(req.params.id, req.user)
   if (!account) return res.status(404).json({ message: 'Not found' })
-  // getOwnedOrGrantedAccount already verified access — no extra permission needed
+  // gated by permission unless owner/staff
+  const staff = req.user.role === 'admin' || req.user.role === 'support'
+  const isOwner = account.owner_id === req.user.id
+  if (!staff && !isOwner && !req.user.permissions?.refresh_accounts)
+    return res.status(403).json({ message: 'Missing permission: refresh_accounts' })
   try {
+    // Live refresh should only bring in RECENT mail (last 5 minutes), not old emails.
     const fiveMinAgo = Date.now() - 5 * 60 * 1000
     const emails = await extractFromAccount(account, 40, false, [], fiveMinAgo)
     res.json({ account: { id: account.id, email: account.email }, emails })
@@ -194,6 +180,24 @@ router.post('/:id/priority', async (req, res) => {
   const { setAccountPriority } = await import('../store.js')
   await setAccountPriority(account.id, !!req.body.priority)
   res.json({ ok: true, priority: !!req.body.priority })
+})
+
+// ----- Storage: user-saved emails (persistent) -----
+router.get('/saved', async (req, res) => {
+  res.json(await listSavedEmails(req.user.id))
+})
+router.post('/saved', async (req, res) => {
+  const emails = Array.isArray(req.body?.emails) ? req.body.emails : []
+  const n = await saveEmailsForUser(req.user.id, emails)
+  res.json({ ok: true, saved: n })
+})
+router.delete('/saved/:id', async (req, res) => {
+  await deleteSavedEmail(req.user.id, req.params.id)
+  res.json({ ok: true })
+})
+router.delete('/saved', async (req, res) => {
+  await clearSavedEmails(req.user.id)
+  res.json({ ok: true })
 })
 
 export default router

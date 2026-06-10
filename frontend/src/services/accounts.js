@@ -35,3 +35,9 @@ export const setPriority = (id, priority) =>
   client.post(`/api/accounts/${id}/priority`, { priority })
 
 export const resumeAll = () => client.post('/api/accounts/resume')
+
+// Storage (persistent saved emails)
+export const getSavedEmails    = () => client.get('/api/accounts/saved').then(r => r.data)
+export const saveEmailsToStore = (emails) => client.post('/api/accounts/saved', { emails })
+export const deleteSavedEmail  = (id) => client.delete(`/api/accounts/saved/${id}`)
+export const clearSavedEmails  = () => client.delete('/api/accounts/saved')

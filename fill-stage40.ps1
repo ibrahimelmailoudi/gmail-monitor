@@ -1,4 +1,47 @@
-﻿import { formatDistanceToNowStrict } from 'date-fns'
+# fill-stage40.ps1 - slower/clearer slide-in animation, clickable subject, IP leading-zero strip
+# Run from E:\gmail-monitor
+$ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Force -Path frontend\src,frontend\src\components\emails | Out-Null
+
+Set-Content -LiteralPath 'frontend\src\index.css' -Encoding utf8 -Value @'
+html, body, #root { margin: 0; height: 100%; }
+body { background: #f1f5f9; }
+
+/* new-email entrance animation - slow + larger travel so it's clearly visible
+   sliding in from the left, one after another (staggered by index in EmailCard). */
+@keyframes emailIn {
+  0%   { opacity: 0; transform: translateX(-60px) scale(0.9); }
+  50%  { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+.email-in { animation: emailIn 2.2s cubic-bezier(.16,.84,.34,1) both; }
+
+/* pulsing border to mark a brand-new email (expires when 'new' state clears) */
+@keyframes newPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(37,99,235,0.55); }
+  70%  { box-shadow: 0 0 0 6px rgba(37,99,235,0); }
+  100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+}
+.email-new-border { animation: newPulse 2s ease-out infinite; }
+
+/* the little NEW ticket badge sliding down above a new email */
+@keyframes ticketDrop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.email-new-ticket { animation: ticketDrop 0.4s ease-out both; }
+
+/* pulsing green dot for the 'listening for new mail' state */
+@keyframes livePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+  70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+'@
+Write-Host 'wrote frontend\src\index.css'
+
+Set-Content -LiteralPath 'frontend\src\components\emails\EmailCard.jsx' -Encoding utf8 -Value @'
+import { formatDistanceToNowStrict } from 'date-fns'
 import { CATEGORIES } from '../../config'
 
 const timeAgo = (ts) => {
@@ -117,3 +160,8 @@ export default function EmailCard({ email, isNew, onFilter, onPlacementClick, in
 
 const chip = { fontSize: 10, color: '#334155', background: 'rgba(255,255,255,0.7)',
   border: '1px solid rgba(0,0,0,0.08)', borderRadius: 5, padding: '1px 6px' }
+'@
+Write-Host 'wrote frontend\src\components\emails\EmailCard.jsx'
+
+Write-Host ""
+Write-Host "STAGE 40 written. Restart frontend (npm run dev), hard-refresh."

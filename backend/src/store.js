@@ -465,3 +465,41 @@ export async function setAllActiveForUser(userId, active) {
 export async function setAccountPriority(accountId, priority) {
   await q('update accounts set priority = $1 where id = $2', [!!priority, accountId])
 }
+
+// ---------------- saved emails (Storage section, persistent per user) ----------------
+export async function saveEmailsForUser(userId, emails) {
+  if (!Array.isArray(emails) || !emails.length) return 0
+  let saved = 0
+  for (const e of emails) {
+    // skip if this user already saved the same message (by message_id when present)
+    if (e.message_id) {
+      const { rows } = await q(
+        'select 1 from saved_emails where user_id = $1 and message_id = $2 limit 1',
+        [userId, e.message_id])
+      if (rows.length) continue
+    }
+    await q(
+      `insert into saved_emails
+       (user_id, message_id, from_name, from_email, subject, ip, category, spf, dkim, dmarc, body_text, source)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [userId, e.message_id || null, e.from_name || null, e.from_email || null,
+       e.subject || null, e.ip || null, e.category || null, e.spf || null,
+       e.dkim || null, e.dmarc || null, e.body_text || null, e.source || null])
+    saved++
+  }
+  return saved
+}
+
+export async function listSavedEmails(userId) {
+  const { rows } = await q(
+    'select * from saved_emails where user_id = $1 order by saved_at desc', [userId])
+  return rows
+}
+
+export async function deleteSavedEmail(userId, id) {
+  await q('delete from saved_emails where id = $1 and user_id = $2', [id, userId])
+}
+
+export async function clearSavedEmails(userId) {
+  await q('delete from saved_emails where user_id = $1', [userId])
+}

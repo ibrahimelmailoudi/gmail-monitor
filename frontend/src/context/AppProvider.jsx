@@ -3,6 +3,7 @@ import { ConfigProvider, message } from 'antd'
 import { makeTheme } from '../theme'
 import { useAccounts } from '../hooks/useAccounts'
 import { resumeAll, pauseAll } from '../services/accounts'
+import * as accountsApi from '../services/accounts'
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -17,18 +18,24 @@ export function AppProvider({ children }) {
   // does NOT wipe the extracted emails. Lives in memory for the session.
   const [extractResults, setExtractResults] = useState([])
   const [extractMeta, setExtractMeta] = useState({ accountId: null, withSource: false })
-  // Emails the user chose to save (full source). In-memory for the session.
+  // Saved emails now PERSIST in the database (survive refresh/logout), unlike the
+  // in-memory extract results.
   const [storedEmails, setStoredEmails] = useState([])
-  const saveEmails = useCallback((emails) => {
-    setStoredEmails(prev => {
-      const seen = new Set(prev.map(e => e.message_id || `${e.from_email}|${e.subject}`))
-      const add = emails.filter(e => !seen.has(e.message_id || `${e.from_email}|${e.subject}`))
-      return [...add, ...prev]
-    })
+  const reloadStored = useCallback(async () => {
+    try { setStoredEmails(await accountsApi.getSavedEmails()) } catch { /* ignore */ }
   }, [])
-  const removeStored = useCallback((id) =>
-    setStoredEmails(prev => prev.filter(e => (e.message_id || `${e.from_email}|${e.subject}`) !== id)), [])
-  const clearStored = useCallback(() => setStoredEmails([]), [])
+  const saveEmails = useCallback(async (emails) => {
+    try {
+      await accountsApi.saveEmailsToStore(emails)
+      await reloadStored()
+    } catch { messageApi.open({ type: 'error', content: 'Could not save to Storage' }) }
+  }, [reloadStored, messageApi])
+  const removeStored = useCallback(async (id) => {
+    try { await accountsApi.deleteSavedEmail(id); await reloadStored() } catch { /* ignore */ }
+  }, [reloadStored])
+  const clearStored = useCallback(async () => {
+    try { await accountsApi.clearSavedEmails(); setStoredEmails([]) } catch { /* ignore */ }
+  }, [])
 
   const notify = useCallback((msg, type = 'success') =>
     messageApi.open({ type: type === 'error' ? 'error' : 'success', content: msg }), [messageApi])
@@ -45,6 +52,9 @@ export function AppProvider({ children }) {
   // Resume when the user comes back. Also pause on page close.
   const hideTimer = useRef(null)
   const resumeTimer = useRef(null)
+  // Load persisted saved-emails from the DB once logged in.
+  useEffect(() => { if (token) reloadStored() }, [token, reloadStored])
+
   useEffect(() => {
     if (!token) return
     const IDLE = 10 * 60 * 1000
@@ -76,7 +86,7 @@ export function AppProvider({ children }) {
     <ConfigProvider theme={makeTheme(mode)}>
       <AppContext.Provider value={{ token, setToken, user, mode, toggleMode, notify,
         extractResults, setExtractResults, extractMeta, setExtractMeta,
-        storedEmails, saveEmails, removeStored, clearStored,
+        storedEmails, saveEmails, removeStored, clearStored, reloadStored,
         ...accountState }}>
         {contextHolder}
         {children}

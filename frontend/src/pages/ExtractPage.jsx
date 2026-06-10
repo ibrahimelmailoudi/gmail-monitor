@@ -80,13 +80,13 @@ export default function ExtractPage() {
 
   // Save the selected rows (with full source) into Storage.
   const rowKeyOf = (r, i) => r.message_id || `${r.from_email}|${r.subject}|${i}`
-  const saveSelected = () => {
+  const saveSelected = async () => {
     const chosen = rows.filter((r, i) => selectedKeys.includes(rowKeyOf(r, i)))
     if (!chosen.length) return message.warning('Select at least one email')
     if (!withSource && chosen.some(r => !r.source)) {
       message.warning('Tip: enable "Include full source" and re-extract to save the raw source too')
     }
-    saveEmails(chosen)
+    await saveEmails(chosen)
     notify?.(`Saved ${chosen.length} email(s) to Storage`)
     setSelectedKeys([])
   }

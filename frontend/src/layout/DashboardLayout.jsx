@@ -64,7 +64,7 @@ export default function DashboardLayout() {
     <Layout style={{ minHeight: '100vh' }}>
       <Sider trigger={null} collapsible collapsed={collapsed} width={248} breakpoint="lg">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12,
-          justifyContent: collapsed ? 'center' : 'flex-start',
+          justifyContent: 'center',
           padding: collapsed ? '18px 0' : '20px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <img src={logo} alt="logo" width={collapsed ? 34 : 38} height={collapsed ? 34 : 38} style={{ borderRadius: 10 }} />
           {!collapsed && (

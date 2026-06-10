@@ -19,6 +19,10 @@ export default function AccountsPage() {
   const [isps, setIsps] = useState([])
 
   useEffect(() => { fetchIsps().then(setIsps).catch(() => setIsps([])) }, [])
+  const [showOwnerName, setShowOwnerName] = useState(false)
+  useEffect(() => {
+    import('../services/accounts').then(m => m.getUiSettings?.().then(s => setShowOwnerName(!!s.show_owner_name)).catch(() => {}))
+  }, [])
 
   // resolve an account's ISP name (by isp_id, else by email domain)
   const ispNameOf = (a) => {
@@ -234,7 +238,7 @@ export default function AccountsPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <AccountCard account={a} onToggle={toggle} onRemove={remove}
                   onRefresh={mergeEmails} newEmailIds={newEmailIds} emailFilter={emailFilter}
-                  onPlacementClick={(cat) => setPlacement(cat)} />
+                  onPlacementClick={(cat) => setPlacement(cat)} showOwnerName={showOwnerName} />
               </div>
             </div>
           ))

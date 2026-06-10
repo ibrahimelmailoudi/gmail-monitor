@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, InputNumber, Select, Typography, Tag, Space, Checkbox, Badge, Popconfirm, message } from 'antd'
-import { PlusOutlined, SafetyOutlined, DeleteOutlined, AppstoreOutlined } from '@ant-design/icons'
-import { getUsers, createUser, updateUser, getPerms, setUserRole, deleteUser, setUserSections, getPresence } from '../../services/admin'
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Typography, Tag, Space, Checkbox, Badge, Popconfirm, message, Tooltip } from 'antd'
+import { PlusOutlined, SafetyOutlined, DeleteOutlined, AppstoreOutlined, CrownOutlined } from '@ant-design/icons'
+import { getUsers, createUser, updateUser, getPerms, setUserRole, deleteUser, setUserSections, getPresence, claimTopAdmin, transferTopAdmin } from '../../services/admin'
 import { useApp } from '../../context/AppProvider'
 import { SECTIONS } from '../../sections'
 
@@ -71,13 +71,47 @@ export default function UsersPage() {
   const openSec = (u) => { setSecModal(u); secForm.setFieldsValue({ sections: u.sections || [] }) }
   const saveSec = async (vals) => { await setUserSections(secModal.id, vals.sections || []); message.success('Access updated'); setSecModal(null); load() }
 
-  const roleTag = (r) => r === 'admin' ? <Tag color="red">ADMIN</Tag> : r === 'support' ? <Tag color="blue">SUPPORT</Tag> : <Tag>USER</Tag>
+  const roleTag = (r, row) => (
+    <Space size={4}>
+      {r === 'admin' ? <Tag color="red">ADMIN</Tag> : r === 'support' ? <Tag color="blue">SUPPORT</Tag> : <Tag>USER</Tag>}
+      {row?.is_top_admin && <Tag color="gold" icon={<CrownOutlined />}>TOP</Tag>}
+    </Space>
+  )
+  // Transfer top-admin to another admin. Code-free if I'm the top admin; else prompt for code.
+  const makeTopAdmin = (u) => {
+    const doTransfer = async (code) => {
+      try { await transferTopAdmin(u.id, code); message.success(`${u.username} is now the top admin`); load() }
+      catch (e) { message.error(e.response?.data?.message || 'Transfer failed'); throw e }
+    }
+    if (me?.is_top_admin) {
+      Modal.confirm({ title: `Make "${u.username}" the top admin?`,
+        content: 'You will hand over top-admin authority to this admin.',
+        okText: 'Transfer', onOk: () => doTransfer() })
+    } else {
+      let code = ''
+      Modal.confirm({ title: `Make "${u.username}" the top admin`,
+        content: (<div><p>Enter the top-admin secret code to authorize this.</p>
+          <Input.Password placeholder="Secret code" onChange={(e) => { code = e.target.value }} /></div>),
+        okText: 'Transfer', onOk: () => doTransfer(code) })
+    }
+  }
+  // Claim top-admin for myself using the secret code (initial setup / recovery).
+  const claimTop = () => {
+    let code = ''
+    Modal.confirm({ title: 'Claim top-admin role',
+      content: (<div><p>Enter the secret code to become the top admin.</p>
+        <Input.Password placeholder="Secret code" onChange={(e) => { code = e.target.value }} /></div>),
+      okText: 'Claim', onOk: async () => {
+        try { await claimTopAdmin(code); message.success('You are now the top admin'); load() }
+        catch (e) { message.error(e.response?.data?.message || 'Claim failed'); throw e }
+      } })
+  }
 
   const columns = [
     { title: '', dataIndex: 'id', width: 30, render: (id) =>
       <Badge status={online.includes(id) ? 'success' : 'default'} title={online.includes(id) ? 'Online' : 'Offline'} /> },
     { title: 'Username', dataIndex: 'username' },
-    { title: 'Role', dataIndex: 'role', render: (v) => roleTag(v) },
+    { title: 'Role', dataIndex: 'role', render: (v, row) => roleTag(v, row) },
     { title: 'Max accts', dataIndex: 'max_accounts', width: 120, render: (v, r) =>
       <InputNumber size="small" min={0} max={9999} defaultValue={v} onBlur={(e) => setMax(r.id, Number(e.target.value))} /> },
     { title: 'Token (h)', dataIndex: 'token_hours', width: 120, render: (v, r) =>
@@ -87,6 +121,11 @@ export default function UsersPage() {
       <Space>
         <Button size="small" icon={<SafetyOutlined />} onClick={() => openRole(r)} disabled={r.id === me?.id}>Role</Button>
         <Button size="small" icon={<AppstoreOutlined />} onClick={() => openSec(r)}>Access</Button>
+        {r.role === 'admin' && !r.is_top_admin && (
+          <Tooltip title="Make this admin the top admin">
+            <Button size="small" icon={<CrownOutlined />} onClick={() => makeTopAdmin(r)} />
+          </Tooltip>
+        )}
         {r.role === 'admin' ? (
           <Button size="small" danger icon={<DeleteOutlined />} disabled={r.id === me?.id}
             onClick={() => remove(r)} />
@@ -102,7 +141,12 @@ export default function UsersPage() {
     <>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>Users</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Add User</Button>
+        <Space>
+          {me?.role === 'admin' && !me?.is_top_admin && (
+            <Button icon={<CrownOutlined />} onClick={claimTop}>Claim top admin</Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Add User</Button>
+        </Space>
       </Space>
       <Table rowKey="id" loading={loading} dataSource={users} columns={columns} pagination={false} />
 

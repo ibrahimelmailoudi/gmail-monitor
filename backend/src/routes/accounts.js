@@ -102,6 +102,12 @@ router.get('/gmail-enabled', async (_req, res) => {
   res.json({ enabled: String(await getSetting('gmail_api_enabled', false)) === 'true' })
 })
 
+// UI settings any logged-in user may read (non-sensitive display toggles)
+router.get('/ui-settings', async (_req, res) => {
+  const { getSetting } = await import('../store.js')
+  res.json({ show_owner_name: String(await getSetting('show_owner_name', false)) === 'true' })
+})
+
 // Enabled ISP presets for the Add-Account picker (any logged-in user)
 router.get('/isps', async (_req, res) => {
   const isps = await listIsps(true)

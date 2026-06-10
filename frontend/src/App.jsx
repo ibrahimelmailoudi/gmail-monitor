@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage'
 import AccountsPage from './pages/AccountsPage'
 import MyAccountsPage from './pages/MyAccountsPage'
 import StoragePage from './pages/StoragePage'
+import VaultPage from './pages/VaultPage'
 import ExtractPage from './pages/ExtractPage'
 import RequestsPage from './pages/RequestsPage'
 import LoginPage from './pages/LoginPage'
@@ -55,6 +56,7 @@ function Root() {
             <Route path="monitor" element={<AccountsPage />} />
             <Route path="my-accounts" element={<MyAccountsPage />} />
             <Route path="storage" element={<StoragePage />} />
+            <Route path="vault" element={<VaultPage />} />
             <Route path="requests" element={<RequestsPage />} />
             <Route path="extract" element={<Gate section="extract"><ExtractPage /></Gate>} />
             <Route path="manage/all-accounts" element={<Gate section="allaccounts"><AllAccountsPage /></Gate>} />

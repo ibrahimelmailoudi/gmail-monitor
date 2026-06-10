@@ -41,3 +41,5 @@ export const getSavedEmails    = () => client.get('/api/accounts/saved').then(r 
 export const saveEmailsToStore = (emails) => client.post('/api/accounts/saved', { emails })
 export const deleteSavedEmail  = (id) => client.delete(`/api/accounts/saved/${id}`)
 export const clearSavedEmails  = () => client.delete('/api/accounts/saved')
+
+export const getUiSettings = () => client.get('/api/accounts/ui-settings').then(r => r.data)

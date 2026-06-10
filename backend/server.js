@@ -13,6 +13,7 @@ import accountRoutes from './src/routes/accounts.js'
 import adminRoutes from './src/routes/admin.js'
 import toolsRoutes from './src/routes/tools.js'
 import requestRoutes from './src/routes/requests.js'
+import vaultRoutes from './src/routes/vault.js'
 
 const app = express()
 
@@ -73,6 +74,7 @@ app.use('/api/accounts', accountRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/tools', toolsRoutes)
 app.use('/api/requests', requestRoutes)
+app.use('/api/vault', vaultRoutes)
 
 const server = http.createServer(app)
 const io = new Server(server, { cors: { origin: corsCheck, credentials: true } })

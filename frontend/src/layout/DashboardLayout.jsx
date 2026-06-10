@@ -2,7 +2,7 @@
 import { Layout, Menu, Button, Typography, Space, Tooltip, Avatar, Dropdown } from 'antd'
 import { DashboardOutlined, InboxOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   BulbOutlined, BulbFilled, UserOutlined, SettingOutlined, ToolOutlined, AreaChartOutlined,
-  DatabaseOutlined, ExportOutlined, MessageOutlined, MailOutlined, IdcardOutlined } from '@ant-design/icons'
+  DatabaseOutlined, ExportOutlined, MessageOutlined, MailOutlined, IdcardOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useApp } from '../context/AppProvider'
 import { logout } from '../services/auth'
@@ -30,6 +30,7 @@ export default function DashboardLayout() {
     { key: '/my-accounts', icon: <MailOutlined />, label: 'My Accounts' },
     can('extract') && { key: '/extract', icon: <ExportOutlined />, label: 'Extract' },
     { key: '/storage', icon: <DatabaseOutlined />, label: 'Storage' },
+    { key: '/vault', icon: <LockOutlined />, label: 'Vault' },
     { key: '/requests', icon: <MessageOutlined />, label: 'Support' },
   ].filter(Boolean)
 

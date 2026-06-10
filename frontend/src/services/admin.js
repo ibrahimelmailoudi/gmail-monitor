@@ -30,8 +30,9 @@ export const updateIsp = (id, patch) => client.patch(`/api/admin/isps/${id}`, pa
 export const deleteIsp = (id) => client.delete(`/api/admin/isps/${id}`)
 export const deleteUser = (id, topAdminCode) =>
   client.delete(`/api/admin/users/${id}`, topAdminCode ? { data: { topAdminCode } } : undefined)
-export const rotateTopAdmin = (currentCode, newCode) =>
-  client.post('/api/admin/top-admin/rotate', { currentCode, newCode })
+export const claimTopAdmin = (code) => client.post('/api/admin/top-admin/claim', { code })
+export const transferTopAdmin = (targetUserId, code) =>
+  client.post('/api/admin/top-admin/transfer', { targetUserId, code })
 export const setUserSections = (id, sections) => client.patch(`/api/admin/users/${id}/sections`, { sections })
 export const getSettings = () => client.get('/api/admin/settings').then(r => r.data)
 export const saveSettings = (patch) => client.put('/api/admin/settings', patch)

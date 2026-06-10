@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import { Card, Table, Button, Typography, Space, Empty, Modal, Tag, message } from 'antd'
-import { DownloadOutlined, DeleteOutlined, EyeOutlined, ClearOutlined } from '@ant-design/icons'
+import { Card, Table, Button, Typography, Space, Empty, Modal, Tag, message, Segmented, Input } from 'antd'
+import { DownloadOutlined, DeleteOutlined, EyeOutlined, ClearOutlined, SearchOutlined } from '@ant-design/icons'
 import { useApp } from '../context/AppProvider'
 
 const { Title, Text } = Typography
@@ -80,13 +80,83 @@ export default function StoragePage() {
         )}
       </Card>
 
-      <Modal open={!!view} title={view?.subject || 'Email source'} width={820} footer={null}
+      <Modal open={!!view} title={view?.subject || 'Email source'} width={900} footer={null}
         onCancel={() => setView(null)}>
-        <pre style={{ maxHeight: 460, overflow: 'auto', background: '#0f172a', color: '#e2e8f0',
-          padding: 14, borderRadius: 8, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {view?.source || buildFallback(view || {})}
-        </pre>
+        <SourceViewer email={view} buildFallback={buildFallback} />
       </Modal>
     </>
+  )
+}
+
+// Default header params to highlight in the source view
+const DEFAULT_PARAMS = ['SPF', 'DKIM', 'DMARC', 'Received', 'From', 'Return-Path', 'Message-ID', 'Authentication-Results']
+
+function SourceViewer({ email, buildFallback }) {
+  const [viewMode, setViewMode] = useState('full') // full | body | text
+  const [find, setFind] = useState('')
+  const [params, setParams] = useState(DEFAULT_PARAMS)
+  const [customParam, setCustomParam] = useState('')
+  if (!email) return null
+
+  const full = email.source || buildFallback(email)
+  // body = everything after the first blank line (headers end); text = body_text
+  const bodyOnly = (() => {
+    const idx = full.indexOf('\n\n')
+    return idx >= 0 ? full.slice(idx + 2) : full
+  })()
+  const textOnly = email.body_text || bodyOnly
+  const content = viewMode === 'body' ? bodyOnly : viewMode === 'text' ? textOnly : full
+
+  // Build highlighted HTML: highlight param names (yellow) + find matches (green)
+  const escapeHtml = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  const escapeReg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let html = escapeHtml(content)
+  params.filter(Boolean).forEach(p => {
+    const re = new RegExp(`(${escapeReg(p)})`, 'gi')
+    html = html.replace(re, '<mark style="background:#fde047;color:#111">$1</mark>')
+  })
+  if (find.trim()) {
+    const re = new RegExp(`(${escapeReg(find.trim())})`, 'gi')
+    html = html.replace(re, '<mark style="background:#34d399;color:#062">$1</mark>')
+  }
+
+  const addParam = () => {
+    const p = customParam.trim()
+    if (p && !params.includes(p)) setParams([...params, p])
+    setCustomParam('')
+  }
+
+  return (
+    <div>
+      <Space wrap style={{ marginBottom: 10 }}>
+        <Segmented value={viewMode} onChange={setViewMode}
+          options={[{ label: 'Full source', value: 'full' }, { label: 'Body', value: 'body' }, { label: 'Text', value: 'text' }]} />
+        <Input prefix={<SearchOutlined />} placeholder="Find in source..." value={find}
+          onChange={(e) => setFind(e.target.value)} style={{ width: 220 }} allowClear />
+        <Button size="small" icon={<DownloadOutlined />} onClick={() => {
+          const blob = new Blob([full], { type: 'message/rfc822' })
+          const url = URL.createObjectURL(blob); const a = document.createElement('a')
+          a.href = url; a.download = `${(email.subject || 'email').replace(/[^a-z0-9]+/gi, '_').slice(0, 40)}.eml`; a.click()
+          URL.revokeObjectURL(url)
+        }}>Download .eml</Button>
+      </Space>
+
+      <div style={{ marginBottom: 10 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>Highlighted params: </Text>
+        <Space size={[4, 4]} wrap style={{ marginTop: 4 }}>
+          {params.map(p => (
+            <Tag key={p} closable onClose={() => setParams(params.filter(x => x !== p))}
+              style={{ background: '#fde047', borderColor: '#eab308' }}>{p}</Tag>
+          ))}
+          <Input size="small" placeholder="add param" value={customParam} style={{ width: 120 }}
+            onChange={(e) => setCustomParam(e.target.value)} onPressEnter={addParam} />
+          <Button size="small" onClick={addParam}>Add</Button>
+        </Space>
+      </div>
+
+      <pre style={{ maxHeight: 440, overflow: 'auto', background: '#0f172a', color: '#e2e8f0',
+        padding: 14, borderRadius: 8, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
   )
 }

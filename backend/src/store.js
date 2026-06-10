@@ -503,3 +503,64 @@ export async function deleteSavedEmail(userId, id) {
 export async function clearSavedEmails(userId) {
   await q('delete from saved_emails where user_id = $1', [userId])
 }
+
+// ---------------- personal Vault (encrypted secrets per user) ----------------
+function vEnc(text) { return text ? encrypt({ v: text }) : null }
+function vDec(blob) { try { return blob ? decrypt(blob).v : '' } catch { return '' } }
+
+export async function listVaultItems(userId, reveal = false) {
+  const { rows } = await q('select * from vault_items where user_id = $1 order by created_at desc', [userId])
+  return rows.map(r => ({
+    id: r.id, label: r.label, account_email: r.account_email, username: r.username,
+    notes: reveal ? vDec(r.notes) : undefined,
+    secret: reveal ? vDec(r.secret) : undefined,
+    hasSecret: !!r.secret, hasNotes: !!r.notes,
+    created_at: r.created_at, updated_at: r.updated_at,
+  }))
+}
+
+export async function getVaultItem(userId, id) {
+  const { rows } = await q('select * from vault_items where id = $1 and user_id = $2', [id, userId])
+  if (!rows[0]) return null
+  const r = rows[0]
+  return { id: r.id, label: r.label, account_email: r.account_email, username: r.username,
+    secret: vDec(r.secret), notes: vDec(r.notes) }
+}
+
+export async function addVaultItem(userId, { label, account_email, username, secret, notes }) {
+  const { rows } = await q(
+    `insert into vault_items (user_id, label, account_email, username, secret, notes)
+     values ($1,$2,$3,$4,$5,$6) returning id`,
+    [userId, label || 'Untitled', account_email || null, username || null, vEnc(secret), vEnc(notes)])
+  return rows[0]
+}
+
+export async function updateVaultItem(userId, id, { label, account_email, username, secret, notes }) {
+  await q(
+    `update vault_items set label=$1, account_email=$2, username=$3, secret=$4, notes=$5, updated_at=now()
+     where id=$6 and user_id=$7`,
+    [label || 'Untitled', account_email || null, username || null, vEnc(secret), vEnc(notes), id, userId])
+}
+
+export async function deleteVaultItem(userId, id) {
+  await q('delete from vault_items where id = $1 and user_id = $2', [id, userId])
+}
+
+// ---------------- top admin (flag-based, transferable) ----------------
+export async function isUserTopAdmin(userId) {
+  const { rows } = await q('select is_top_admin from users where id = $1', [userId])
+  return !!rows[0]?.is_top_admin
+}
+export async function anyTopAdminExists() {
+  const { rows } = await q('select 1 from users where is_top_admin = true limit 1')
+  return rows.length > 0
+}
+// Transfer top-admin to targetUserId (must be an admin). Clears the old flag first
+// so the partial-unique index is satisfied.
+export async function setTopAdmin(targetUserId) {
+  const { rows } = await q('select role from users where id = $1', [targetUserId])
+  if (!rows[0]) throw new Error('User not found')
+  if (rows[0].role !== 'admin') throw new Error('Top admin must be an admin')
+  await q('update users set is_top_admin = false where is_top_admin = true')
+  await q('update users set is_top_admin = true where id = $1', [targetUserId])
+}

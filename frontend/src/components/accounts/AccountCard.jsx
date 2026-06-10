@@ -8,7 +8,7 @@ import { refreshAccount, searchUsers, shareAccount, setPriority } from '../../se
 const { Text } = Typography
 const MAX_PER_SECTION = 40
 
-export default function AccountCard({ account, onToggle, onRemove, onRefresh, newEmailIds, emailFilter, onPlacementClick }) {
+export default function AccountCard({ account, onToggle, onRemove, onRefresh, newEmailIds, emailFilter, onPlacementClick, showOwnerName }) {
   const { user } = useApp()
   const isStaff = user?.role === 'admin' || user?.role === 'support'
   const isAdmin = !!user?.is_admin
@@ -105,7 +105,9 @@ export default function AccountCard({ account, onToggle, onRemove, onRefresh, ne
             </Text>
           </Space>
 
-          <Text strong style={{ wordBreak: 'break-all' }}>{account.email}</Text>
+          <Text strong style={{ wordBreak: 'break-all' }}>
+            {showOwnerName ? (account.owner_username || account.ownerName || account.email) : account.email}
+          </Text>
           <Space size={6} wrap>
             {isStaff && account.type && <Tag>{account.type.toUpperCase()}</Tag>}
             {account.scope === 'global' && <Tag color="purple">GLOBAL</Tag>}

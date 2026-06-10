@@ -12,7 +12,8 @@ import { startAccount, emitAdded } from '../monitor.js'
 const router = Router()
 
 const publicUser = (u) => ({ id: u.id, username: u.username, code: u.code, is_admin: u.is_admin,
-  role: u.role, permissions: u.permissions || {}, sections: u.sections || [], max_accounts: u.max_accounts, picture: u.picture })
+  role: u.role, permissions: u.permissions || {}, sections: u.sections || [], max_accounts: u.max_accounts,
+  picture: u.picture, is_top_admin: !!u.is_top_admin })
 
 // Login (username + password)
 router.post('/login', async (req, res) => {

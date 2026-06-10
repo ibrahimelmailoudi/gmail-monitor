@@ -12,12 +12,13 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(null)
   const [tokenHours, setTokenHours] = useState(48)
   const [storeEmails, setStoreEmails] = useState(false)
+  const [showOwnerName, setShowOwnerName] = useState(false)
   const [gmailOn, setGmailOn] = useState(false)
   const [gmailCfg, setGmailCfg] = useState({ gmail_client_id: '', gmail_client_secret: '', gmail_redirect_uri: '' })
   const [form] = Form.useForm()
 
   const load = () => getIspsAdmin().then(setIsps).finally(() => setLoading(false))
-  useEffect(() => { load(); getSettings().then(s => { setTokenHours(s.token_hours); setStoreEmails(s.store_emails); setGmailOn(s.gmail_api_enabled); setGmailCfg({ gmail_client_id: s.gmail_client_id || '', gmail_client_secret: '', gmail_redirect_uri: s.gmail_redirect_uri || '' }) }).catch(() => {}) }, [])
+  useEffect(() => { load(); getSettings().then(s => { setTokenHours(s.token_hours); setStoreEmails(s.store_emails); setGmailOn(s.gmail_api_enabled); setShowOwnerName(s.show_owner_name); setGmailCfg({ gmail_client_id: s.gmail_client_id || '', gmail_client_secret: '', gmail_redirect_uri: s.gmail_redirect_uri || '' }) }).catch(() => {}) }, [])
 
   const openNew = () => { setEditing(null); form.resetFields(); form.setFieldsValue({ port: 993, ssl: true, enabled: true }); setOpen(true) }
   const openEdit = (r) => { setEditing(r); form.setFieldsValue(r); setOpen(true) }
@@ -62,6 +63,16 @@ export default function SettingsPage() {
         </Space>
         <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
           Global default token lifetime. You can override per user on the Users page.
+        </Paragraph>
+      </Card>
+
+      <Card title="Display" style={{ marginBottom: 16, maxWidth: 460 }}>
+        <Space>
+          <Switch checked={showOwnerName} onChange={async (v) => { setShowOwnerName(v); await saveSettings({ show_owner_name: v }); message.success(v ? "Showing owner name on cards" : "Showing account email on cards") }} />
+          <span>{showOwnerName ? "Monitor cards show the OWNER NAME" : "Monitor cards show the account email"}</span>
+        </Space>
+        <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+          When on, each Monitor card shows the account owner's username instead of the full email address.
         </Paragraph>
       </Card>
 

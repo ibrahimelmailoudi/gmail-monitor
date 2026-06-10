@@ -10,6 +10,7 @@ import {
   getUserByUsername, getUserById, deleteUser, setUserSections, listRequestTypes, addRequestType,
   getSetting, setSetting, trimNotifications, updateIsp, deleteIsp,
   listStoredEmails, deleteEmail, deleteEmailsBulk, listAccessUserIds,
+  isUserTopAdmin, setTopAdmin, anyTopAdminExists,
 } from '../store.js'
 import { emitToUser } from '../monitor.js'
 import { config } from '../config.js'
@@ -17,13 +18,18 @@ import { config } from '../config.js'
 const router = Router()
 router.use(auth, staffOnly)
 
-// The "top admin" is whoever knows the secret code. The code is stored in settings
-// (rotatable at runtime); if unset there, it falls back to the env BOOTSTRAP_SECRET.
+// Top-admin authority can be proven two ways:
+//  1) the caller IS the flagged top admin (is_top_admin), or
+//  2) the caller supplies the correct secret code (bootstrap/fallback).
 async function verifyTopAdminCode(code) {
   if (!code) return false
   const stored = await getSetting('top_admin_code', null)
   const expected = stored || config.bootstrapSecret || ''
   return expected.length > 0 && String(code) === String(expected)
+}
+async function isTopAdminAuthorized(req, code) {
+  if (await isUserTopAdmin(req.user.id)) return true
+  return verifyTopAdminCode(code)
 }
 
 // ----- users -----
@@ -67,21 +73,38 @@ router.delete('/users/:id', requirePerm('manage_users'), async (req, res) => {
   if (!target) return res.status(404).json({ message: 'Not found' })
   if (target.role === 'admin') {
     const code = req.body?.topAdminCode || req.headers['x-top-admin-code'] || ''
-    const ok = await verifyTopAdminCode(code)
-    if (!ok) return res.status(403).json({ message: 'Deleting an admin requires the top-admin secret code' })
+    const ok = await isTopAdminAuthorized(req, code)
+    if (!ok) return res.status(403).json({ message: 'Deleting an admin requires top-admin authority (be the top admin, or enter the secret code)' })
   }
   await deleteUser(req.params.id); res.json({ ok: true })
 })
 
-// Rotate the top-admin secret code. Requires the CURRENT code (so only the current
-// top admin can hand off the role by setting a new code).
-router.post('/top-admin/rotate', requirePerm('manage_users'), async (req, res) => {
-  const { currentCode, newCode } = req.body || {}
-  if (!newCode || newCode.length < 6) return res.status(400).json({ message: 'New code must be at least 6 characters' })
-  const ok = await verifyTopAdminCode(currentCode || '')
-  if (!ok) return res.status(403).json({ message: 'Current top-admin code is incorrect' })
-  await setSetting('top_admin_code', String(newCode))
-  res.json({ ok: true })
+// Claim top-admin using the secret code. Use this to set the INITIAL top admin
+// (when none is flagged yet) or to recover. The caller must be an admin.
+router.post('/top-admin/claim', requirePerm('manage_users'), async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Only an admin can be top admin' })
+  const ok = await verifyTopAdminCode(req.body?.code || '')
+  if (!ok) return res.status(403).json({ message: 'Incorrect secret code' })
+  await setTopAdmin(req.user.id)
+  res.json({ ok: true, message: 'You are now the top admin' })
+})
+
+// Transfer top-admin to another admin. Allowed if the caller is the current top
+// admin (NO code needed), or supplies the secret code as a fallback.
+router.post('/top-admin/transfer', requirePerm('manage_users'), async (req, res) => {
+  const { targetUserId, code } = req.body || {}
+  if (!targetUserId) return res.status(400).json({ message: 'targetUserId required' })
+  const ok = await isTopAdminAuthorized(req, code || '')
+  if (!ok) return res.status(403).json({ message: 'Only the current top admin (or the secret code) can transfer the role' })
+  try { await setTopAdmin(targetUserId); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ message: e.message }) }
+})
+
+// Who is the current top admin (id only) - any staff can read.
+router.get('/top-admin', async (_req, res) => {
+  const { anyTopAdminExists } = await import('../store.js')
+  const exists = await anyTopAdminExists()
+  res.json({ exists })
 })
 router.patch('/users/:id/sections', requirePerm('manage_users'), async (req, res) => {
   const { sections = [] } = req.body || {}
@@ -102,6 +125,7 @@ router.get('/settings', async (_req, res) => res.json({
   token_hours: Number(await getSetting('token_hours', 48)),
   store_emails: String(await getSetting('store_emails', false)) === 'true',
   gmail_api_enabled: String(await getSetting('gmail_api_enabled', false)) === 'true',
+  show_owner_name: String(await getSetting('show_owner_name', false)) === 'true',
   gmail_client_id: await getSetting('gmail_client_id', ''),
   gmail_redirect_uri: await getSetting('gmail_redirect_uri', ''),
   // client secret intentionally not returned
@@ -110,6 +134,7 @@ router.put('/settings', requirePerm('manage_isps'), async (req, res) => {
   if (req.body.token_hours != null) await setSetting('token_hours', Number(req.body.token_hours))
   if (req.body.store_emails != null) await setSetting('store_emails', !!req.body.store_emails)
   if (req.body.gmail_api_enabled != null) await setSetting('gmail_api_enabled', !!req.body.gmail_api_enabled)
+  if (req.body.show_owner_name != null) await setSetting('show_owner_name', !!req.body.show_owner_name)
   if (req.body.gmail_client_id != null) await setSetting('gmail_client_id', String(req.body.gmail_client_id))
   if (req.body.gmail_client_secret) await setSetting('gmail_client_secret', String(req.body.gmail_client_secret))
   if (req.body.gmail_redirect_uri != null) await setSetting('gmail_redirect_uri', String(req.body.gmail_redirect_uri))

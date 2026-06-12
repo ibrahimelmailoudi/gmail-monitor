@@ -1,9 +1,9 @@
 ﻿import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, InputNumber, Select, Typography, Tag, Space, Checkbox, Badge, Popconfirm, message, Tooltip } from 'antd'
-import { PlusOutlined, SafetyOutlined, DeleteOutlined, AppstoreOutlined, CrownOutlined } from '@ant-design/icons'
-import { getUsers, createUser, updateUser, getPerms, setUserRole, deleteUser, setUserSections, getPresence, claimTopAdmin, transferTopAdmin } from '../../services/admin'
+import { PlusOutlined, SafetyOutlined, DeleteOutlined, AppstoreOutlined, CrownOutlined, EditOutlined } from '@ant-design/icons'
+import { getUsers, createUser, updateUser, getPerms, setUserRole, deleteUser, setUserSections, getPresence, claimTopAdmin, transferTopAdmin, renameUserProfile, reorderUsers, topAdminExists } from '../../services/admin'
 import { useApp } from '../../context/AppProvider'
-import { SECTIONS } from '../../sections'
+import { SECTIONS, GRANTABLE_SECTIONS } from '../../sections'
 
 const { Title } = Typography
 const PERM_LABELS = {
@@ -25,6 +25,8 @@ export default function UsersPage() {
   const [form] = Form.useForm(); const [roleForm] = Form.useForm(); const [secForm] = Form.useForm()
 
   const load = () => getUsers().then(setUsers).finally(() => setLoading(false))
+  const [ownerExists, setOwnerExists] = useState(true)
+  useEffect(() => { topAdminExists().then(d => setOwnerExists(!!d.exists)).catch(() => {}) }, [])
   const loadPresence = () => getPresence().then(d => setOnline(d.onlineIds || [])).catch(() => {})
   useEffect(() => {
     load(); getPerms().then(d => setPerms(d.perms)).catch(() => {})
@@ -37,7 +39,7 @@ export default function UsersPage() {
   }
   const remove = async (u) => {
     // Deleting an admin needs the top-admin secret code.
-    if (u.role === 'admin') {
+    if (u.role === 'admin' || u.role === 'owner') {
       let code = ''
       Modal.confirm({
         title: `Delete admin "${u.username}"`,
@@ -61,22 +63,29 @@ export default function UsersPage() {
   const setMax = async (id, max_accounts) => { await updateUser(id, { max_accounts }); load() }
   const setTokenHours = async (id, token_hours) => { await updateUser(id, { token_hours: token_hours || null }); load() }
 
-  const openRole = (u) => { setRoleModal(u); roleForm.setFieldsValue({ role: u.role || 'user',
+  const openRole = (u) => { setRoleModal(u); roleForm.setFieldsValue({ role: u.role || 'mailer',
     permissions: Object.keys(u.permissions || {}).filter(k => u.permissions[k]) }) }
   const saveRole = async (vals) => {
     const p = {}; (vals.permissions || []).forEach(x => { p[x] = true })
-    try { await setUserRole(roleModal.id, vals.role, vals.role === 'support' ? p : {}); message.success('Role updated'); setRoleModal(null); load() }
+    try { await setUserRole(roleModal.id, vals.role, ['manager','team_leader'].includes(vals.role) ? p : {}); message.success('Role updated'); setRoleModal(null); load() }
     catch (e) { message.error(e.response?.data?.message || 'Failed') }
   }
   const openSec = (u) => { setSecModal(u); secForm.setFieldsValue({ sections: u.sections || [] }) }
   const saveSec = async (vals) => { await setUserSections(secModal.id, vals.sections || []); message.success('Access updated'); setSecModal(null); load() }
 
-  const roleTag = (r, row) => (
-    <Space size={4}>
-      {r === 'admin' ? <Tag color="red">ADMIN</Tag> : r === 'support' ? <Tag color="blue">SUPPORT</Tag> : <Tag>USER</Tag>}
-      {row?.is_top_admin && <Tag color="gold" icon={<CrownOutlined />}>TOP</Tag>}
-    </Space>
-  )
+  const roleTag = (r, row) => {
+    const map = {
+      owner: ['gold', 'OWNER'], admin: ['red', 'ADMIN'], support: ['volcano', 'SUPPORT'],
+      manager: ['blue', 'MANAGER'], team_leader: ['cyan', 'TEAM LEADER'], mailer: ['default', 'MAILER'],
+    }
+    const [color, label] = map[r] || ['default', (r || 'mailer').toUpperCase()]
+    return (
+      <Space size={4}>
+        <Tag color={color}>{label}</Tag>
+        {row?.is_top_admin && <Tag color="gold" icon={<CrownOutlined />}>TOP</Tag>}
+      </Space>
+    )
+  }
   // Transfer top-admin to another admin. Code-free if I'm the top admin; else prompt for code.
   const makeTopAdmin = (u) => {
     const doTransfer = async (code) => {
@@ -96,6 +105,19 @@ export default function UsersPage() {
     }
   }
   // Claim top-admin for myself using the secret code (initial setup / recovery).
+  // Rename a user's profile
+  const renameUser = (u) => {
+    let name = u.username
+    Modal.confirm({
+      title: `Rename "${u.username}"`,
+      content: (<Input defaultValue={u.username} onChange={(e) => { name = e.target.value }} style={{ marginTop: 8 }} />),
+      okText: 'Save',
+      onOk: async () => {
+        try { await renameUserProfile(u.id, name); message.success('Renamed'); load() }
+        catch (e) { message.error(e.response?.data?.message || 'Rename failed'); throw e }
+      },
+    })
+  }
   const claimTop = () => {
     let code = ''
     Modal.confirm({ title: 'Claim top-admin role',
@@ -119,6 +141,7 @@ export default function UsersPage() {
         onBlur={(e) => setTokenHours(r.id, Number(e.target.value) || null)} /> },
     { title: 'Actions', key: 'act', render: (_, r) => (
       <Space>
+        <Button size="small" icon={<EditOutlined />} onClick={() => renameUser(r)}>Rename</Button>
         <Button size="small" icon={<SafetyOutlined />} onClick={() => openRole(r)} disabled={r.id === me?.id}>Role</Button>
         <Button size="small" icon={<AppstoreOutlined />} onClick={() => openSec(r)}>Access</Button>
         {r.role === 'admin' && !r.is_top_admin && (
@@ -126,7 +149,7 @@ export default function UsersPage() {
             <Button size="small" icon={<CrownOutlined />} onClick={() => makeTopAdmin(r)} />
           </Tooltip>
         )}
-        {r.role === 'admin' ? (
+        {(r.role === 'admin' || r.role === 'owner') ? (
           <Button size="small" danger icon={<DeleteOutlined />} disabled={r.id === me?.id}
             onClick={() => remove(r)} />
         ) : (
@@ -142,7 +165,7 @@ export default function UsersPage() {
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>Users</Title>
         <Space>
-          {me?.role === 'admin' && !me?.is_top_admin && (
+          {me?.role === 'admin' && !me?.is_top_admin && !ownerExists && (
             <Button icon={<CrownOutlined />} onClick={claimTop}>Claim top admin</Button>
           )}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Add User</Button>
@@ -162,10 +185,16 @@ export default function UsersPage() {
         onOk={() => roleForm.submit()} okText="Save">
         <Form form={roleForm} layout="vertical" onFinish={saveRole}>
           <Form.Item name="role" label="Role">
-            <Select options={[{ value: 'user', label: 'User' }, { value: 'support', label: 'Support' }, { value: 'admin', label: 'Admin (full access)' }]} />
+            <Select options={[
+              { value: 'mailer', label: 'Mailer (base user)' },
+              { value: 'team_leader', label: 'Team Leader' },
+              { value: 'manager', label: 'Manager' },
+              { value: 'support', label: 'Support (all access)' },
+              { value: 'admin', label: 'Admin (full access)' },
+            ]} />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(p, c) => p.role !== c.role}>
-            {({ getFieldValue }) => getFieldValue('role') === 'support' && (
+            {({ getFieldValue }) => ['manager','team_leader'].includes(getFieldValue('role')) && (
               <Form.Item name="permissions" label="Permissions">
                 <Checkbox.Group options={perms.map(p => ({ label: PERM_LABELS[p] || p, value: p }))} />
               </Form.Item>)}
@@ -174,13 +203,24 @@ export default function UsersPage() {
       </Modal>
 
       <Modal title={`Section access - ${secModal?.username || ''}`} open={!!secModal} onCancel={() => setSecModal(null)}
-        onOk={() => secForm.submit()} okText="Save">
+        onOk={() => secForm.submit()} okText="Save" width={520}>
         <p style={{ color: '#64748b' }}>Grant this user access to extra dashboard sections.</p>
         <Form form={secForm} onFinish={saveSec}>
-          <Form.Item name="sections">
-            <Checkbox.Group options={SECTIONS.map(s => ({ label: s.label, value: s.key }))} />
+          <Form.Item name="sections" style={{ marginBottom: 8 }}>
+            <Checkbox.Group style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+              options={GRANTABLE_SECTIONS.map(s => ({ label: s.label, value: s.key }))} />
           </Form.Item>
         </Form>
+        <div style={{ marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+          <p style={{ color: '#94a3b8', fontSize: 12, margin: '0 0 6px' }}>Always available to everyone:</p>
+          <Space size={[6, 6]} wrap>
+            {SECTIONS.filter(s => s.always).map(s => <Tag key={s.key}>{s.label}</Tag>)}
+          </Space>
+          <p style={{ color: '#94a3b8', fontSize: 12, margin: '10px 0 6px' }}>Role-restricted (by rank, not grantable):</p>
+          <Space size={[6, 6]} wrap>
+            {SECTIONS.filter(s => s.role).map(s => <Tag key={s.key} color="default">{s.label} - {s.role}</Tag>)}
+          </Space>
+        </div>
       </Modal>
     </>
   )

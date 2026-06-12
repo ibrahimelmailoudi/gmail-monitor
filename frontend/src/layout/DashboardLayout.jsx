@@ -2,9 +2,10 @@
 import { Layout, Menu, Button, Typography, Space, Tooltip, Avatar, Dropdown } from 'antd'
 import { DashboardOutlined, InboxOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   BulbOutlined, BulbFilled, UserOutlined, SettingOutlined, ToolOutlined, AreaChartOutlined,
-  DatabaseOutlined, ExportOutlined, MessageOutlined, MailOutlined, IdcardOutlined, LockOutlined } from '@ant-design/icons'
+  DatabaseOutlined, ExportOutlined, MessageOutlined, MailOutlined, IdcardOutlined, LockOutlined, TeamOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useApp } from '../context/AppProvider'
+import { isStaff as staffCheck, roleLabel as roleLabelOf, rankOf, RANK, canManageUsers } from '../roles'
 import { logout } from '../services/auth'
 import { APP_NAME } from '../branding'
 import NotificationBell from '../components/NotificationBell'
@@ -18,9 +19,9 @@ export default function DashboardLayout() {
   const { pathname } = useLocation()
   const { setToken, accounts, mode, toggleMode, user } = useApp()
   const [collapsed, setCollapsed] = useState(false)
-  const isStaff = user?.role === 'admin' || user?.role === 'support'
+  const isStaff = staffCheck(user)
   const sections = user?.sections || []
-  const can = (s) => isStaff || sections.includes(s)
+  const can = (s) => isStaff || ['monitor', 'extract'].includes(s) || sections.includes(s)
 
   const handleLogout = () => { logout(); setToken(null) }
 
@@ -30,6 +31,8 @@ export default function DashboardLayout() {
     { key: '/my-accounts', icon: <MailOutlined />, label: 'My Accounts' },
     can('extract') && { key: '/extract', icon: <ExportOutlined />, label: 'Extract' },
     { key: '/storage', icon: <DatabaseOutlined />, label: 'Storage' },
+    { key: '/tools', icon: <ToolOutlined />, label: 'Tools' },
+    rankOf(user) >= RANK.team_leader && { key: '/teams', icon: <TeamOutlined />, label: 'Teams' },
     { key: '/vault', icon: <LockOutlined />, label: 'Vault' },
     { key: '/requests', icon: <MessageOutlined />, label: 'Support' },
   ].filter(Boolean)
@@ -37,9 +40,8 @@ export default function DashboardLayout() {
   const manageChildren = [
     can('allaccounts') && { key: '/manage/all-accounts', icon: <DatabaseOutlined />, label: 'All Accounts' },
     can('storedemails') && { key: '/manage/stored-emails', icon: <MailOutlined />, label: 'Stored Emails' },
-    can('users') && { key: '/manage/users', icon: <UserOutlined />, label: 'Users' },
-    can('settings') && { key: '/manage/settings', icon: <SettingOutlined />, label: 'Settings' },
-    can('tools') && { key: '/manage/tools', icon: <ToolOutlined />, label: 'Auth Tools' },
+    canManageUsers(user) && { key: '/manage/users', icon: <UserOutlined />, label: 'Users' },
+    rankOf(user) >= RANK.admin && { key: '/manage/settings', icon: <SettingOutlined />, label: 'Settings' },
     can('analytics') && { key: '/manage/analytics', icon: <AreaChartOutlined />, label: 'Analytics' },
   ].filter(Boolean)
 
@@ -48,7 +50,7 @@ export default function DashboardLayout() {
     ...(manageChildren.length ? [{ type: 'group', label: collapsed ? '' : 'MANAGE', children: manageChildren }] : []),
   ]
 
-  const roleLabel = user?.role === 'admin' ? 'Administrator' : user?.role === 'support' ? 'Support' : 'User'
+  const roleLabel = roleLabelOf(user?.role)
   const profileMenu = { items: [
     { key: 'who', disabled: true, label: (
       <div style={{ padding: '4px 0' }}>
@@ -89,7 +91,7 @@ export default function DashboardLayout() {
             <Text type="secondary">{accounts.length} accounts monitored</Text>
           </Space>
           <Space size="middle">
-            {isStaff && <NotificationBell />}
+            <NotificationBell />
             <Tooltip title={mode === 'dark' ? 'Light mode' : 'Dark mode'}>
               <Button type="text" shape="circle" icon={mode === 'dark' ? <BulbFilled /> : <BulbOutlined />} onClick={toggleMode} />
             </Tooltip>

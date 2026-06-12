@@ -3,6 +3,7 @@ import { Avatar, Button, Space, Popconfirm, Tag, Card, Typography, Input, Toolti
 import { MailOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, SearchOutlined, LockOutlined, ReloadOutlined, ShareAltOutlined, StarOutlined, StarFilled } from '@ant-design/icons'
 import EmailCard from '../emails/EmailCard'
 import { useApp } from '../../context/AppProvider'
+import { isStaff as staffCheck } from '../../roles'
 import { refreshAccount, searchUsers, shareAccount, setPriority } from '../../services/accounts'
 
 const { Text } = Typography
@@ -10,7 +11,7 @@ const MAX_PER_SECTION = 40
 
 export default function AccountCard({ account, onToggle, onRemove, onRefresh, newEmailIds, emailFilter, onPlacementClick, showOwnerName }) {
   const { user } = useApp()
-  const isStaff = user?.role === 'admin' || user?.role === 'support'
+  const isStaff = staffCheck(user)
   const isAdmin = !!user?.is_admin
   const [localSearch, setLocalSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)

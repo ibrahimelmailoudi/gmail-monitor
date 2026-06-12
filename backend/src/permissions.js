@@ -1,16 +1,36 @@
-﻿// Permission keys an admin can grant a support user
+﻿// Real-world role hierarchy (highest to lowest):
+//   owner > admin > manager > team_leader > mailer
+// Higher ranks outrank lower ones. owner == the is_top_admin flag holder.
+export const ROLES = ['mailer', 'team_leader', 'manager', 'support', 'admin', 'owner']
+export const RANK = { mailer: 1, team_leader: 2, manager: 3, support: 4, admin: 5, owner: 6 }
+
+export function rankOf(user) { return RANK[user?.role] || 0 }
+
+// Section-grant permission keys (granted by owner/admin to managers/leaders).
 export const PERMS = ['manage_users', 'manage_isps', 'delete_accounts',
   'share_accounts', 'resolve_requests', 'set_passwords', 'refresh_accounts']
 
+// "Staff" = anyone above a plain mailer (manager and up).
 export function isStaff(user) {
-  return user?.role === 'admin' || user?.role === 'support'
+  return rankOf(user) >= RANK.manager
 }
 
-// admin has all; support has whatever is granted in user.permissions
+// owner/admin: full powers. manager/team_leader: only explicitly granted perms.
+// mailer: none.
 export function can(user, perm) {
-  if (user?.role === 'admin') return true
-  if (user?.role === 'support') return !!user.permissions?.[perm]
+  if (rankOf(user) >= RANK.support) return true          // support, admin, owner = all
+  if (rankOf(user) >= RANK.team_leader) return !!user.permissions?.[perm]
   return false
+}
+
+// Only owner/admin manage users.
+export function canManageUsers(user) {
+  return rankOf(user) >= RANK.support
+}
+
+// Can `actor` act on / modify `target` (must strictly outrank them)?
+export function outranks(actor, target) {
+  return rankOf(actor) > rankOf(target)
 }
 
 export function staffOnly(req, res, next) {

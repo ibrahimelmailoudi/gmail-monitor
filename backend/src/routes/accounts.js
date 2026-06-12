@@ -5,7 +5,7 @@ import {
   saveEmailsForUser, listSavedEmails, deleteSavedEmail, clearSavedEmails,
   countAccountsForOwner, getIsp,
 } from '../store.js'
-import { startAccount, stopAccount, toggleAccount, emitAdded, emitRemoved, startForUser, startAllForUser, stopAllForUser } from '../monitor.js'
+import { startAccount, stopAccount, toggleAccount, emitAdded, emitRemoved, startForUser, startAllForUser, stopAllForUser, emitToUser } from '../monitor.js'
 import { verifyImap } from '../imap.js'
 import { listIsps, getOwnedOrGrantedAccount, searchUsers, grantAccess } from '../store.js'
 import { providerOf, placementsFor } from '../placements.js'
@@ -154,6 +154,13 @@ router.post('/:id/share', async (req, res) => {
   const { userId } = req.body || {}
   if (!userId) return res.status(400).json({ message: 'userId required' })
   await grantAccess(account.id, userId)
+  // notify the recipient + push a live event so their list refreshes
+  try {
+    const { notifyUser } = await import('../store.js')
+    await notifyUser(userId, 'account_shared', `${req.user.username} shared the account ${account.email} with you`)
+    emitToUser(userId, 'notif', { message: `${req.user.username} shared an account with you` })
+    emitToUser(userId, 'account_shared', { accountId: account.id })
+  } catch { /* ignore */ }
   res.json({ ok: true })
 })
 
@@ -204,6 +211,48 @@ router.delete('/saved/:id', async (req, res) => {
 router.delete('/saved', async (req, res) => {
   await clearSavedEmails(req.user.id)
   res.json({ ok: true })
+})
+
+// ----- share saved emails as a named packet to another user -----
+router.post('/packets', async (req, res) => {
+  const { name, toUserId, emails } = req.body || {}
+  if (!toUserId || !Array.isArray(emails) || !emails.length)
+    return res.status(400).json({ message: 'toUserId and emails required' })
+  const { createPacket, notifyUser } = await import('../store.js')
+  await createPacket(name, req.user.id, toUserId, emails)
+  try {
+    await notifyUser(toUserId, 'packet_shared', `${req.user.username} shared "${name || 'emails'}" (${emails.length}) with you`)
+    emitToUser(toUserId, 'notif', { message: `${req.user.username} shared emails with you` })
+    emitToUser(toUserId, 'packet_shared', { name })
+  } catch { /* ignore */ }
+  res.json({ ok: true })
+})
+router.get('/packets', async (req, res) => {
+  const { listPacketsForUser } = await import('../store.js')
+  res.json(await listPacketsForUser(req.user.id))
+})
+// import a packet's emails into my own Storage, then optionally keep/drop the packet
+router.post('/packets/:id/import', async (req, res) => {
+  const { getPacket, saveEmailsForUser } = await import('../store.js')
+  const p = await getPacket(req.user.id, req.params.id)
+  if (!p) return res.status(404).json({ message: 'Not found' })
+  const n = await saveEmailsForUser(req.user.id, p.emails || [])
+  res.json({ ok: true, imported: n })
+})
+router.delete('/packets/:id', async (req, res) => {
+  const { deletePacket } = await import('../store.js')
+  await deletePacket(req.user.id, req.params.id)
+  res.json({ ok: true })
+})
+
+// ----- notifications (any logged-in user: their own + staff broadcasts) -----
+router.get('/notifications', async (req, res) => {
+  const { listNotifications, countUnread } = await import('../store.js')
+  res.json({ items: await listNotifications(req.user.id), unread: await countUnread(req.user.id) })
+})
+router.post('/notifications/read', async (req, res) => {
+  const { markAllRead, trimNotifications } = await import('../store.js')
+  await markAllRead(req.user.id); await trimNotifications(); res.json({ ok: true })
 })
 
 export default router

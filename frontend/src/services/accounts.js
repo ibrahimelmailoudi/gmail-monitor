@@ -43,3 +43,12 @@ export const deleteSavedEmail  = (id) => client.delete(`/api/accounts/saved/${id
 export const clearSavedEmails  = () => client.delete('/api/accounts/saved')
 
 export const getUiSettings = () => client.get('/api/accounts/ui-settings').then(r => r.data)
+
+// shared email packets
+export const sendPacket    = (name, toUserId, emails) => client.post('/api/accounts/packets', { name, toUserId, emails })
+export const getPackets    = () => client.get('/api/accounts/packets').then(r => r.data)
+export const importPacket  = (id) => client.post(`/api/accounts/packets/${id}/import`)
+export const deletePacket  = (id) => client.delete(`/api/accounts/packets/${id}`)
+// notifications (user-accessible)
+export const getNotifications = () => client.get('/api/accounts/notifications').then(r => r.data)
+export const markNotificationsRead = () => client.post('/api/accounts/notifications/read')

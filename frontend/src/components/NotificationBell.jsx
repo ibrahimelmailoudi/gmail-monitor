@@ -1,7 +1,8 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
-import { Badge, Dropdown, Button, List, Typography, Empty, Modal, Input, message } from 'antd'
+import { Badge, Dropdown, Button, List, Typography, Empty, Modal, Input, message, notification } from 'antd'
 import { BellOutlined } from '@ant-design/icons'
-import { getNotifications, markNotificationsRead, getResetRequests, setUserPassword } from '../services/admin'
+import { getResetRequests, setUserPassword } from '../services/admin'
+import { getNotifications, markNotificationsRead } from '../services/accounts'
 import { useSocketEvent } from '../hooks/useRealtime'
 
 const { Text } = Typography
@@ -12,9 +13,20 @@ export default function NotificationBell() {
   const [resetModal, setResetModal] = useState(null) // { reqId, username }
   const [newPass, setNewPass] = useState('')
 
+  const [api, notifHolder] = notification.useNotification()
+
   const load = useCallback(() => { getNotifications().then(setData).catch(() => {}) }, [])
   useEffect(() => { load() }, [load])
-  useSocketEvent('notif', load)
+  // When a live event arrives: refresh the list AND show an in-interface banner.
+  const onLive = useCallback((payload) => {
+    load()
+    api.open({
+      message: 'New notification',
+      description: payload?.message || 'You have a new notification',
+      placement: 'topRight', duration: 5,
+    })
+  }, [load, api])
+  useSocketEvent('notif', onLive)
   useSocketEvent('request_new', load)
 
   const onOpenChange = async (v) => {
@@ -58,6 +70,7 @@ export default function NotificationBell() {
 
   return (
     <>
+      {notifHolder}
       <Dropdown open={open} onOpenChange={onOpenChange} trigger={['click']}
         popupRender={() => panel} placement="bottomRight">
         <Badge count={data.unread} size="small">

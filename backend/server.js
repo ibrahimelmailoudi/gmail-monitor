@@ -7,13 +7,14 @@ import { config } from './src/config.js'
 import { initMonitor, startForUser, scheduleStopForUser } from './src/monitor.js'
 import { touchUser, purgeOldEmails, purgeResolvedRequests } from './src/store.js'
 import { auth } from './src/auth-middleware.js'
-import { isStaff } from './src/permissions.js'
+import { isStaff, canManageUsers } from './src/permissions.js'
 import authRoutes from './src/routes/auth.js'
 import accountRoutes from './src/routes/accounts.js'
 import adminRoutes from './src/routes/admin.js'
 import toolsRoutes from './src/routes/tools.js'
 import requestRoutes from './src/routes/requests.js'
 import vaultRoutes from './src/routes/vault.js'
+import teamRoutes from './src/routes/teams.js'
 
 const app = express()
 
@@ -37,7 +38,7 @@ const corsCheck = (origin, cb) => {
 }
 
 app.use(cors({ origin: corsCheck, credentials: true }))
-app.use(express.json())
+app.use(express.json({ limit: '25mb' }))
 
 // Request logger: prints every request + its response status to the terminal.
 // For 4xx/5xx it also prints the JSON message the server sent back, so failures
@@ -65,7 +66,7 @@ const online = new Map()
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 app.get('/api/presence', auth, (req, res) => {
-  if (!isStaff(req.user)) return res.status(403).json({ message: 'Staff only' })
+  if (!canManageUsers(req.user)) return res.status(403).json({ message: 'Not allowed' })
   res.json({ onlineNow: online.size, onlineIds: [...online.keys()] })
 })
 
@@ -75,6 +76,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/tools', toolsRoutes)
 app.use('/api/requests', requestRoutes)
 app.use('/api/vault', vaultRoutes)
+app.use('/api/teams', teamRoutes)
 
 const server = http.createServer(app)
 const io = new Server(server, { cors: { origin: corsCheck, credentials: true } })

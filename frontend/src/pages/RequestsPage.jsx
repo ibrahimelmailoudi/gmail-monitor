@@ -2,6 +2,7 @@
 import { Card, List, Tag, Button, Modal, Form, Input, Select, Space, Typography, message, Empty, Popconfirm } from 'antd'
 import { PlusOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useApp } from '../context/AppProvider'
+import { isStaff as staffCheck, can as canCheck } from '../roles'
 import { getRequests, createRequest, getThread, replyRequest, setRequestStatus, getRequestTypes, deleteRequest } from '../services/requests'
 import { useSocketEvent } from '../hooks/useRealtime'
 
@@ -9,10 +10,19 @@ const { Title, Text, Paragraph } = Typography
 
 const TYPE_LABEL = { reset: 'Password reset', access: 'Account access', problem: 'Problem report', message: 'Message' }
 
+// Sender-rank groups for the staff requests view (highest rank first).
+const RANK_GROUPS = [
+  { role: 'admin', label: 'From Admins', color: 'red' },
+  { role: 'support', label: 'From Support', color: 'volcano' },
+  { role: 'manager', label: 'From Managers', color: 'blue' },
+  { role: 'team_leader', label: 'From Team Leaders', color: 'cyan' },
+  { role: 'mailer', label: 'From Mailers', color: 'default' },
+]
+
 export default function RequestsPage() {
   const { user } = useApp()
-  const isStaff = user?.role === 'admin' || user?.role === 'support'
-  const canResolve = user?.role === 'admin' || user?.permissions?.resolve_requests
+  const isStaff = staffCheck(user)
+  const canResolve = canCheck(user, 'resolve_requests')
 
   const [requests, setRequests] = useState([])
   const [open, setOpen] = useState(false)
@@ -54,8 +64,32 @@ export default function RequestsPage() {
   const doDelete = async (id) => {
     try { await deleteRequest(id); if (active?.id === id) setActive(null); load(); message.success('Request deleted') }
     catch (e) { message.error(e.response?.data?.message || 'Delete failed') }
-    if (active?.id === r.id) setActive({ ...active, status })
   }
+
+  // Single request row - shared by the grouped (staff) and flat (user) lists.
+  const renderRequestItem = (r) => (
+    <List.Item onClick={() => openThread(r)} style={{ cursor: 'pointer', padding: 12,
+      background: active?.id === r.id ? 'rgba(37,99,235,0.06)' : undefined, borderRadius: 8 }}
+      actions={[
+        ...(canResolve ? [
+          r.status === 'open'
+            ? <Button size="small" icon={<CheckOutlined />} onClick={(e) => { e.stopPropagation(); resolve(r, 'resolved') }}>Resolve</Button>
+            : <Button size="small" onClick={(e) => { e.stopPropagation(); resolve(r, 'open') }}>Reopen</Button>
+        ] : []),
+        <Popconfirm title="Delete this request?" onConfirm={(e) => { e?.stopPropagation?.(); doDelete(r.id) }}
+          onCancel={(e) => e?.stopPropagation?.()}>
+          <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
+        </Popconfirm>,
+      ]}>
+      <List.Item.Meta
+        title={<Space>
+          <Tag color={r.status === 'open' ? 'orange' : 'green'}>{r.status}</Tag>
+          <Text strong>{TYPE_LABEL[r.type] || r.type}</Text>
+          {isStaff && <Text type="secondary">- {r.username}</Text>}
+        </Space>}
+        description={<Text type="secondary">{r.subject || '(no subject)'} - {new Date(r.created_at).toLocaleString()}</Text>} />
+    </List.Item>
+  )
 
   return (
     <>
@@ -65,33 +99,28 @@ export default function RequestsPage() {
       </Space>
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <Card style={{ flex: '1 1 360px' }} styles={{ body: { padding: 8 } }}>
-          {requests.length === 0 ? <Empty description="No requests" /> : (
-            <List dataSource={requests} renderItem={(r) => (
-              <List.Item onClick={() => openThread(r)} style={{ cursor: 'pointer', padding: 12,
-                background: active?.id === r.id ? 'rgba(37,99,235,0.06)' : undefined, borderRadius: 8 }}
-                actions={[
-                  ...(canResolve ? [
-                    r.status === 'open'
-                      ? <Button size="small" icon={<CheckOutlined />} onClick={(e) => { e.stopPropagation(); resolve(r, 'resolved') }}>Resolve</Button>
-                      : <Button size="small" onClick={(e) => { e.stopPropagation(); resolve(r, 'open') }}>Reopen</Button>
-                  ] : []),
-                  <Popconfirm title="Delete this request?" onConfirm={(e) => { e?.stopPropagation?.(); doDelete(r.id) }}
-                    onCancel={(e) => e?.stopPropagation?.()}>
-                    <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
-                  </Popconfirm>,
-                ]}>
-                <List.Item.Meta
-                  title={<Space>
-                    <Tag color={r.status === 'open' ? 'orange' : 'green'}>{r.status}</Tag>
-                    <Text strong>{TYPE_LABEL[r.type] || r.type}</Text>
-                    {isStaff && <Text type="secondary">- {r.username}</Text>}
-                  </Space>}
-                  description={<Text type="secondary">{r.subject || '(no subject)'} - {new Date(r.created_at).toLocaleString()}</Text>} />
-              </List.Item>
-            )} />
+        <div style={{ flex: '1 1 360px' }}>
+          {requests.length === 0 ? (
+            <Card><Empty description="No requests" /></Card>
+          ) : isStaff ? (
+            // Staff: grouped by the sender's rank, highest-rank group first.
+            RANK_GROUPS.map(g => {
+              const items = requests.filter(r => (r.sender_role || 'mailer') === g.role)
+              if (!items.length) return null
+              return (
+                <Card key={g.role} size="small" style={{ marginBottom: 12 }}
+                  title={<Space><Tag color={g.color}>{g.label}</Tag><Text type="secondary">({items.length})</Text></Space>}
+                  styles={{ body: { padding: 8 } }}>
+                  <List dataSource={items} renderItem={renderRequestItem} />
+                </Card>
+              )
+            })
+          ) : (
+            <Card styles={{ body: { padding: 8 } }}>
+              <List dataSource={requests} renderItem={renderRequestItem} />
+            </Card>
           )}
-        </Card>
+        </div>
 
         {active && (
           <Card style={{ flex: '1 1 380px' }} title={`${TYPE_LABEL[active.type] || active.type}: ${active.subject || ''}`}>

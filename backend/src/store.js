@@ -11,16 +11,16 @@ export async function getUserById(id) {
   const { rows } = await q('select * from users where id = $1', [id])
   return rows[0] || null
 }
-export async function createUser({ username, passwordHash, isAdmin = false, maxAccounts = 5 }) {
+export async function createUser({ username, passwordHash, isAdmin = false, maxAccounts = 5, role = 'mailer' }) {
   const { rows } = await q(
-    `insert into users (username, password_hash, is_admin, max_accounts)
-     values ($1,$2,$3,$4) returning *`,
-    [username, passwordHash, isAdmin, maxAccounts])
+    `insert into users (username, password_hash, is_admin, max_accounts, role)
+     values ($1,$2,$3,$4,$5) returning *`,
+    [username, passwordHash, isAdmin, maxAccounts, role])
   return rows[0]
 }
 export async function listUsers() {
   const { rows } = await q(
-    'select id, username, code, is_admin, role, permissions, sections, max_accounts, token_hours, last_seen, picture, created_at from users order by created_at')
+    'select id, username, code, is_admin, is_top_admin, role, permissions, sections, max_accounts, token_hours, last_seen, picture, sort_order, created_at from users order by sort_order asc nulls last, created_at')
   return rows
 }
 export async function updateUser(id, patch) {
@@ -238,17 +238,51 @@ export async function listResetRequests() {
 export async function resolveResetRequest(id) {
   await q('update reset_requests set status = $1, resolved_at = now() where id = $2', ['resolved', id])
 }
-export async function listNotifications() {
-  const { rows } = await q('select * from notifications order by created_at desc limit 10')
+export async function listNotifications(userId = null) {
+  // staff broadcasts (user_id null) + this user's own notifications
+  const { rows } = await q(
+    `select * from notifications where user_id is null or user_id = $1
+     order by created_at desc limit 15`, [userId])
   return rows
 }
-export async function countUnread() {
-  const { rows } = await q('select count(*)::int as n from notifications where read = false')
+export async function countUnread(userId = null) {
+  const { rows } = await q(
+    'select count(*)::int as n from notifications where read = false and (user_id is null or user_id = $1)',
+    [userId])
   return rows[0].n
 }
-export async function markAllRead() {
-  await q('update notifications set read = true where read = false')
+export async function markAllRead(userId = null) {
+  await q('update notifications set read = true where read = false and (user_id is null or user_id = $1)', [userId])
 }
+// Create a notification targeted at a specific user.
+export async function notifyUser(userId, type, message, refId = null) {
+  await q('insert into notifications (type, message, ref_id, user_id) values ($1,$2,$3,$4)',
+    [type, message, refId, userId])
+}
+
+// ---------------- shared email packets ----------------
+export async function createPacket(name, fromUser, toUser, emails) {
+  const { rows } = await q(
+    `insert into shared_packets (name, from_user, to_user, emails) values ($1,$2,$3,$4) returning id`,
+    [name || 'Shared emails', fromUser, toUser, JSON.stringify(emails || [])])
+  return rows[0]
+}
+export async function listPacketsForUser(userId) {
+  const { rows } = await q(`
+    select p.id, p.name, p.created_at, p.emails, u.username as from_username,
+      jsonb_array_length(p.emails) as count
+    from shared_packets p left join users u on u.id = p.from_user
+    where p.to_user = $1 order by p.created_at desc`, [userId])
+  return rows
+}
+export async function getPacket(userId, id) {
+  const { rows } = await q('select * from shared_packets where id = $1 and to_user = $2', [id, userId])
+  return rows[0] || null
+}
+export async function deletePacket(userId, id) {
+  await q('delete from shared_packets where id = $1 and to_user = $2', [id, userId])
+}
+
 
 // ---------------- email extraction (custom fields) ----------------
 // Returns rows for an account with only the requested columns.
@@ -306,10 +340,11 @@ export async function createRequest({ userId, type = 'message', subject, body })
   return rows[0]
 }
 export async function listRequestsForUser(user) {
-  const staff = user.role === 'admin' || user.role === 'support'
+  const RANK = { mailer: 1, team_leader: 2, manager: 3, support: 4, admin: 5, owner: 6 }
+  const staff = (RANK[user.role] || 0) >= RANK.manager
   const { rows } = staff
-    ? await q(`select r.*, u.username from requests r join users u on u.id = r.user_id order by r.created_at desc`)
-    : await q(`select r.*, u.username from requests r join users u on u.id = r.user_id
+    ? await q(`select r.*, u.username, u.role as sender_role from requests r join users u on u.id = r.user_id order by r.created_at desc`)
+    : await q(`select r.*, u.username, u.role as sender_role from requests r join users u on u.id = r.user_id
                where r.user_id = $1 order by r.created_at desc`, [user.id])
   return rows
 }
@@ -560,7 +595,107 @@ export async function anyTopAdminExists() {
 export async function setTopAdmin(targetUserId) {
   const { rows } = await q('select role from users where id = $1', [targetUserId])
   if (!rows[0]) throw new Error('User not found')
-  if (rows[0].role !== 'admin') throw new Error('Top admin must be an admin')
-  await q('update users set is_top_admin = false where is_top_admin = true')
-  await q('update users set is_top_admin = true where id = $1', [targetUserId])
+  if (!['admin', 'owner'].includes(rows[0].role)) throw new Error('Top admin must be an admin')
+  // demote the previous owner: clear flag and drop role admin
+  await q("update users set is_top_admin = false, role = 'admin' where is_top_admin = true")
+  // promote the new owner: set flag and role owner
+  await q("update users set is_top_admin = true, role = 'owner' where id = $1", [targetUserId])
+}
+
+// ---------------- user profile rename + ordering ----------------
+export async function renameUser(id, username) {
+  await q('update users set username = $1 where id = $2', [username, id])
+}
+export async function setUserOrder(ids) {
+  for (let i = 0; i < ids.length; i++) {
+    await q('update users set sort_order = $1 where id = $2', [i, ids[i]])
+  }
+}
+
+// ---------------- Teams ----------------
+export async function listTeams() {
+  const { rows } = await q(`
+    select t.*, u.username as manager_username
+    from teams t left join users u on u.id = t.manager_id
+    order by t.created_at`)
+  return rows
+}
+export async function createTeam(name, managerId) {
+  const { rows } = await q('insert into teams (name, manager_id) values ($1,$2) returning *',
+    [name, managerId || null])
+  return rows[0]
+}
+export async function updateTeam(id, { name, managerId }) {
+  await q('update teams set name = coalesce($1,name), manager_id = $2 where id = $3',
+    [name ?? null, managerId ?? null, id])
+}
+export async function deleteTeam(id) {
+  await q('delete from teams where id = $1', [id])
+}
+export async function teamsForManager(managerId) {
+  const { rows } = await q(`
+    select t.*, u.username as manager_username
+    from teams t left join users u on u.id = t.manager_id
+    where t.manager_id = $1 order by t.created_at`, [managerId])
+  return rows
+}
+// teams where the user is a leader (can span multiple)
+export async function teamsForLeader(userId) {
+  const { rows } = await q(`
+    select t.*, mu.username as manager_username from teams t
+    join team_members m on m.team_id = t.id
+    left join users mu on mu.id = t.manager_id
+    where m.user_id = $1 and m.role_in_team = 'team_leader'
+    order by t.created_at`, [userId])
+  return rows
+}
+export async function listTeamMembers(teamId) {
+  const { rows } = await q(`
+    select m.role_in_team, u.id, u.username, u.role, u.last_seen
+    from team_members m join users u on u.id = m.user_id
+    where m.team_id = $1
+    order by m.role_in_team desc, u.username`, [teamId])
+  return rows
+}
+export async function addTeamMember(teamId, userId, roleInTeam) {
+  // mailer can be in one team only: remove prior mailer membership first
+  if (roleInTeam === 'mailer') {
+    await q("delete from team_members where user_id = $1 and role_in_team = 'mailer'", [userId])
+  }
+  await q(`insert into team_members (team_id, user_id, role_in_team) values ($1,$2,$3)
+    on conflict (team_id, user_id) do update set role_in_team = excluded.role_in_team`,
+    [teamId, userId, roleInTeam])
+}
+export async function removeTeamMember(teamId, userId) {
+  await q('delete from team_members where team_id = $1 and user_id = $2', [teamId, userId])
+}
+// which team(s) is a user a member of (for "my team" view)
+export async function teamsForMember(userId) {
+  const { rows } = await q(`
+    select t.*, mu.username as manager_username, m.role_in_team from teams t
+    join team_members m on m.team_id = t.id
+    left join users mu on mu.id = t.manager_id
+    where m.user_id = $1`, [userId])
+  return rows
+}
+// accounts owned by a given user (read-only view for leaders/managers)
+export async function accountsOwnedByUser(userId) {
+  const { rows } = await q('select * from accounts where owner_id = $1 order by created_at', [userId])
+  return rows.map(publicAccount)
+}
+
+// ---------------- request routing by rank ----------------
+// roles in ascending rank
+const RANK_ORDER = ['mailer', 'team_leader', 'manager', 'support', 'admin', 'owner']
+// the role that should receive a request from someone of `senderRole`
+export function nextRankRole(senderRole) {
+  const i = RANK_ORDER.indexOf(senderRole)
+  if (i < 0) return 'support'
+  // mailer->team_leader, ... admin->owner, owner->owner (stays)
+  return RANK_ORDER[Math.min(i + 1, RANK_ORDER.length - 1)]
+}
+// all user ids holding a given role
+export async function userIdsWithRole(role) {
+  const { rows } = await q('select id from users where role = $1', [role])
+  return rows.map(r => r.id)
 }

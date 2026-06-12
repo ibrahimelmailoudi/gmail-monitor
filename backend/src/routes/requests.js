@@ -16,13 +16,26 @@ router.get('/types', async (_req, res) => res.json(await listRequestTypes()))
 // list (users see their own; staff see all)
 router.get('/', async (req, res) => res.json(await listRequestsForUser(req.user)))
 
-// create a new request (any user)
+// create a new request (any user). Routed to the next rank up.
 router.post('/', async (req, res) => {
   const { type = 'message', subject, body } = req.body || {}
   if (!body && !subject) return res.status(400).json({ message: 'subject or message required' })
   const r = await createRequest({ userId: req.user.id, type, subject, body })
-  emitToStaff('request_new', { ...r, username: req.user.username })
-  emitToStaff('notif', { message: `New ${type} request` })
+  // Notify the people one rank above the sender (mailer->team_leader, etc.),
+  // each with their OWN notification row (independent read state).
+  const { nextRankRole, userIdsWithRole, notifyUser } = await import('../store.js')
+  const targetRole = nextRankRole(req.user.role)
+  let recipients = await userIdsWithRole(targetRole)
+  // owner is the top; if the next rank has nobody, fall back up to admin then owner
+  if (!recipients.length && targetRole !== 'owner') {
+    recipients = (await userIdsWithRole('admin')).concat(await userIdsWithRole('owner'))
+  }
+  for (const uid of recipients) {
+    if (uid === req.user.id) continue
+    await notifyUser(uid, 'request_new', `New ${type} request from ${req.user.username}`, r.id)
+    emitToUser(uid, 'notif', { message: `New ${type} request from ${req.user.username}` })
+    emitToUser(uid, 'request_new', { ...r, username: req.user.username })
+  }
   res.json(r)
 })
 

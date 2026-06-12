@@ -2,6 +2,7 @@
 import { Input, Button, Space, Spin, Empty, Typography, Select, Segmented, Card, Statistic, Row, Col } from 'antd'
 import { PlusOutlined, SearchOutlined, MailOutlined, HolderOutlined, PlayCircleOutlined, PauseCircleOutlined, CopyOutlined } from '@ant-design/icons'
 import { useApp } from '../context/AppProvider'
+import { isStaff as staffCheck } from '../roles'
 import AccountCard from '../components/accounts/AccountCard'
 import AddAccountModal from '../components/accounts/AddAccountModal'
 import { startAll, pauseAll, refreshAccount, fetchIsps } from '../services/accounts'
@@ -11,7 +12,7 @@ const { Title, Text } = Typography
 
 export default function AccountsPage() {
   const { accounts, loading, newEmailIds, toggle, remove, mergeEmails, user } = useApp()
-  const isStaff = user?.role === 'admin' || user?.role === 'support'
+  const isStaff = staffCheck(user)
   const [search, setSearch] = useState('')
   const [esp, setEsp] = useState('all')
   const [placement, setPlacement] = useState('all')

@@ -1,7 +1,7 @@
 ﻿import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { auth } from '../auth-middleware.js'
-import { isStaff, can, staffOnly, requirePerm, PERMS } from '../permissions.js'
+import { isStaff, can, staffOnly, requirePerm, PERMS, rankOf, RANK } from '../permissions.js'
 import bcryptPlaceholder from 'bcryptjs'
 import {
   listUsers, createUser, updateUser, listIsps, addIsp, stats,
@@ -33,7 +33,7 @@ async function isTopAdminAuthorized(req, code) {
 }
 
 // ----- users -----
-router.get('/users', async (_req, res) => res.json(await listUsers()))
+router.get('/users', requirePerm('manage_users'), async (_req, res) => res.json(await listUsers()))
 
 router.post('/users', requirePerm('manage_users'), async (req, res) => {
   const { username, password, is_admin = false, max_accounts = 5 } = req.body || {}
@@ -59,9 +59,40 @@ router.patch('/users/:id', requirePerm('manage_users'), async (req, res) => {
 router.get('/perms', (_req, res) => res.json({ perms: PERMS }))
 router.patch('/users/:id/role', requirePerm('manage_users'), async (req, res) => {
   const { role, permissions } = req.body || {}
-  if (!['user','support','admin'].includes(role)) return res.status(400).json({ message: 'bad role' })
+  if (!['mailer','team_leader','manager','support','admin','owner'].includes(role))
+    return res.status(400).json({ message: 'bad role' })
+  // You may not assign a role at or above your own rank, and may not edit someone
+  // who already outranks (or equals) you. 'owner' is set only via top-admin transfer.
+  if (role === 'owner') return res.status(403).json({ message: 'Owner is set via top-admin transfer, not here' })
+  const target = await getUserById(req.params.id)
+  if (!target) return res.status(404).json({ message: 'Not found' })
+  if (rankOf(req.user) <= rankOf(target) && req.user.id !== req.params.id)
+    return res.status(403).json({ message: 'You cannot modify a user at or above your rank' })
+  if (RANK[role] >= rankOf(req.user))
+    return res.status(403).json({ message: 'You cannot assign a role at or above your own' })
   const { setUserRole } = await import('../store.js')
   res.json(await setUserRole(req.params.id, role, permissions || {}))
+})
+
+// Rename / edit a user's profile (owner/admin/support). Cannot edit someone above you.
+router.patch('/users/:id/profile', requirePerm('manage_users'), async (req, res) => {
+  const target = await getUserById(req.params.id)
+  if (!target) return res.status(404).json({ message: 'Not found' })
+  if (rankOf(req.user) <= rankOf(target) && req.user.id !== req.params.id)
+    return res.status(403).json({ message: 'You cannot edit a user at or above your rank' })
+  const { username } = req.body || {}
+  if (!username || !username.trim()) return res.status(400).json({ message: 'Username required' })
+  const { renameUser } = await import('../store.js')
+  try { await renameUser(req.params.id, username.trim()); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ message: e.message || 'Rename failed (name may be taken)' }) }
+})
+
+// Save the display order of users (owner/admin drag-to-reorder)
+router.post('/users/reorder', requirePerm('manage_users'), async (req, res) => {
+  const ids = Array.isArray(req.body?.order) ? req.body.order : []
+  const { setUserOrder } = await import('../store.js')
+  await setUserOrder(ids)
+  res.json({ ok: true })
 })
 
 // ----- delete user / sections / token hours -----
@@ -71,10 +102,14 @@ router.delete('/users/:id', requirePerm('manage_users'), async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ message: 'Cannot delete yourself' })
   const target = await getUserById(req.params.id)
   if (!target) return res.status(404).json({ message: 'Not found' })
-  if (target.role === 'admin') {
+  // You can only delete someone strictly below your rank.
+  if (rankOf(req.user) <= rankOf(target))
+    return res.status(403).json({ message: 'You cannot delete a user at or above your rank' })
+  // Deleting an admin or owner additionally requires top-admin authority.
+  if (rankOf(target) >= RANK.admin) {
     const code = req.body?.topAdminCode || req.headers['x-top-admin-code'] || ''
     const ok = await isTopAdminAuthorized(req, code)
-    if (!ok) return res.status(403).json({ message: 'Deleting an admin requires top-admin authority (be the top admin, or enter the secret code)' })
+    if (!ok) return res.status(403).json({ message: 'Deleting an admin/owner requires top-admin authority (be the owner, or enter the secret code)' })
   }
   await deleteUser(req.params.id); res.json({ ok: true })
 })
@@ -197,9 +232,9 @@ router.patch('/accounts/:id/scope', requirePerm('share_accounts'), async (req, r
 })
 
 // ----- notifications -----
-router.get('/notifications', async (_req, res) =>
-  res.json({ items: await listNotifications(), unread: await countUnread() }))
-router.post('/notifications/read', async (_req, res) => { await markAllRead(); await trimNotifications(); res.json({ ok: true }) })
+router.get('/notifications', async (req, res) =>
+  res.json({ items: await listNotifications(req.user.id), unread: await countUnread(req.user.id) }))
+router.post('/notifications/read', async (req, res) => { await markAllRead(req.user.id); await trimNotifications(); res.json({ ok: true }) })
 
 // ----- password reset requests -----
 router.get('/reset-requests', async (_req, res) => res.json(await listResetRequests()))
